@@ -1,0 +1,140 @@
+{
+    "qbittorrent": {
+        "host": "192.168.1.28",
+        "port": 8989,
+        "username": "llll",
+        "password": "128012",
+        "use_https": false,
+        "verify_ssl": true,
+        "use_nas_paths_directly": false,
+        "path_mapping": {
+            "/downloads": "/vol1/downloads"
+        }
+    },
+    "deepseek": {
+        "api_key": "",
+        "model": "deepseek-chat",
+        "base_url": "https://api.deepseek.com",
+        "prompt_template": "你是一个专业的种子分类助手。请根据以下规则，将种子名称分类到最合适的类别中。\n\n种子名称: {torrent_name}\n\n可用分类及其描述:\n{category_descriptions}\n\n关键词提示:\n{category_keywords}\n\n分类要求：\n1. 仔细分析种子名称中的关键词和特征，特别注意文件扩展名和分辨率信息。\n2. 电视剧通常包含S01E01这样的季和集信息，或者包含\"剧集\"、\"Season\"、\"Episode\"等词。\n3. 电影通常包含年份(如2020)、分辨率(1080p、4K)或\"BluRay\"、\"WEB-DL\"等标签。\n4. 成人内容通常包含明显的成人关键词，或成人内容制作商名称。\n5. 日本动画通常包含\"动画\"、\"Anime\"或\"Fansub\"等术语。\n6. 如果同时符合多个分类，选择最合适的那个。\n7. 如果无法确定分类或不属于任何明确分类，返回'other'。\n\n请只返回最合适的分类名称（例如：tv, movies, adult, anime, music, games, software, other），不要包含任何其他解释或文字。"
+    },
+    "categories": {
+        "tv": {
+            "savePath": "/downloads/tv/",
+            "keywords": [
+                "S01",
+                "S02",
+                "剧集",
+                "电视剧",
+                "Series",
+                "Episode"
+            ],
+            "description": "电视剧、连续剧、剧集等。关键词如: S01, E01, Season, Episode, 剧集, 电视剧。",
+            "foreign_keywords": [
+                "HBO",
+                "Netflix",
+                "Amazon Prime",
+                "Hulu",
+                "Apple TV+"
+            ]
+        },
+        "movies": {
+            "savePath": "/downloads/movies/",
+            "keywords": [
+                "电影",
+                "Movie",
+                "1080p",
+                "4K",
+                "BluRay",
+                "Remux",
+                "WEB-DL"
+            ],
+            "description": "电影作品。关键词如: Movie, Film, 1080p, 4K, BluRay, Remux, WEB-DL, 电影。",
+            "foreign_keywords": []
+        },
+        "adult": {
+            "savePath": "/downloads/adult/",
+            "keywords": [
+                "成人",
+                "18+",
+                "xxx",
+                "Porn",
+                "Sex",
+                "Nude",
+                "JAV"
+            ],
+            "description": "成人内容。关键词如: Adult, 18+, XXX, Porn, Sex, Nude, JAV, 以及常见成人内容制作商名称。",
+            "foreign_keywords": [
+                "Brazzers",
+                "Naughty America",
+                "Reality Kings",
+                "Blacked",
+                "Vixen",
+                "Tushy",
+                "Deeper",
+                "Evil Angel",
+                "Wicked Pictures",
+                "Digital Playground",
+                "MetArt",
+                "HegreArt"
+            ]
+        },
+        "anime": {
+            "savePath": "/downloads/anime/",
+            "keywords": [
+                "动画",
+                "动漫",
+                "Anime",
+                "Fansub"
+            ],
+            "description": "日本动画、动漫剧集或电影。关键词如: Anime, Fansub, BDRip, 动画, 动漫。",
+            "foreign_keywords": []
+        },
+        "music": {
+            "savePath": "/downloads/music/",
+            "keywords": [
+                "音乐",
+                "专辑",
+                "Music",
+                "Album",
+                "FLAC",
+                "MP3"
+            ],
+            "description": "音乐专辑、单曲等。关键词如: Music, Album, FLAC, MP3, Lossless, 音乐, 专辑。",
+            "foreign_keywords": []
+        },
+        "games": {
+            "savePath": "/downloads/games/",
+            "keywords": [
+                "游戏",
+                "Game",
+                "ISO",
+                "PC",
+                "PS5",
+                "Switch"
+            ],
+            "description": "电子游戏。关键词如: Game, ISO, PC, PS4, PS5, Xbox, Switch, 游戏。",
+            "foreign_keywords": []
+        },
+        "software": {
+            "savePath": "/downloads/software/",
+            "keywords": [
+                "软件",
+                "Software",
+                "App",
+                "Crack",
+                "Keygen"
+            ],
+            "description": "应用程序、软件。关键词如: Software, App, Crack, Keygen, 软件。",
+            "foreign_keywords": []
+        },
+        "other": {
+            "savePath": "/downloads/other/",
+            "keywords": [],
+            "description": "无法归入以上任何分类的其他内容。",
+            "foreign_keywords": []
+        }
+    },
+    "check_interval": 2,
+    "max_retries": 3,
+    "retry_delay": 5
+}
