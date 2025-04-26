@@ -1,14 +1,14 @@
 {
     "qbittorrent": {
-        "host": "192.168.1.28",
+        "host": "你的 ab 后台地址",
         "port": 8989,
-        "username": "llll",
-        "password": "128012",
+        "username": "你的 qb 后台账号",
+        "password": "你的 ab 后台密码",
         "use_https": false,
         "verify_ssl": true,
         "use_nas_paths_directly": false,
         "path_mapping": {
-            "/downloads": "/vol1/downloads"
+            "/downloads": "/vol1/downloads" ##自行修改
         }
     },
     "deepseek": {
