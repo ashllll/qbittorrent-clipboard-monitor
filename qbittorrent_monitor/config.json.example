@@ -1,22 +1,22 @@
 {
     "qbittorrent": {
-        "host": "192.168.1.28",
-        "port": 8989,
-        "username": "admin",
-        "password": "128012",
+        "host": "YOUR_QBITTORRENT_HOST",
+        "port": 8080,
+        "username": "YOUR_USERNAME",
+        "password": "YOUR_PASSWORD",
         "use_https": false,
         "verify_ssl": true,
         "use_nas_paths_directly": false,
         "path_mapping": [
             {
                 "source_prefix": "/downloads",
-                "target_prefix": "/vol1/downloads",
+                "target_prefix": "/your/nas/downloads",
                 "description": "Docker容器到NAS的路径映射"
             }
         ]
     },
     "deepseek": {
-        "api_key": "sk-a4e3f5d970ef4284ad239affd7688f2c",
+        "api_key": "YOUR_DEEPSEEK_API_KEY",
         "model": "deepseek-chat",
         "base_url": "https://api.deepseek.com",
         "timeout": 10,
@@ -182,4 +182,4 @@
     "hot_reload": true,
     "log_level": "INFO",
     "log_file": "magnet_monitor.log"
-}
+} 

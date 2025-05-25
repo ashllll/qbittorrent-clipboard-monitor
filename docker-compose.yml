@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  qbittorrent-monitor:
+    build: .
+    container_name: qbittorrent-monitor
+    restart: unless-stopped
+    
+    # 环境变量配置
+    environment:
+      # qBittorrent连接配置
+      - QBIT_HOST=qbittorrent
+      - QBIT_PORT=8080
+      - QBIT_USER=admin
+      - QBIT_PASS=password
+      
+      # DeepSeek AI配置
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_BASE_URL=https://api.deepseek.com
+      
+      # 其他配置
+      - QBMONITOR_CONFIG=/app/config/config.json
+    
+    # 卷挂载
+    volumes:
+      # 配置文件目录
+      - ./config:/app/config
+      # 日志目录
+      - ./logs:/app/logs
+      # 如果需要访问本地剪贴板，可能需要挂载X11套接字
+      # - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    
+    # 网络配置
+    networks:
+      - qbittorrent-network
+    
+    # 依赖关系
+    depends_on:
+      - qbittorrent
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+  
+  # qBittorrent服务（示例）
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      - WEBUI_PORT=8080
+    
+    ports:
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+    
+    volumes:
+      # qBittorrent配置
+      - ./qbittorrent/config:/config
+      # 下载目录
+      - ./downloads:/downloads
+    
+    networks:
+      - qbittorrent-network
+
+networks:
+  qbittorrent-network:
+    driver: bridge
+
+# 可选的卷定义
+volumes:
+  qbittorrent-config:
+  monitor-config:
+  monitor-logs: 

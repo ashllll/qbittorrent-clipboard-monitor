@@ -1,0 +1,56 @@
+[tool.poetry]
+name = "qbittorrent-clipboard-monitor"
+version = "2.1.0"
+description = "磁力链接监控与自动分类下载工具"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "qbittorrent_monitor"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+aiohttp = "^3.11.0"
+pydantic = "^2.11.0"
+pyperclip = "^1.9.0"
+openai = "^1.76.0"
+tenacity = "^9.0.0"
+watchdog = "^6.0.0"
+dynaconf = "^3.2.0"
+fastapi = {version = "^0.115.0", optional = true}
+uvicorn = {version = "^0.35.0", optional = true}
+click = "^8.1.0"
+apprise = "^1.9.0"
+
+[tool.poetry.extras]
+webui = ["fastapi", "uvicorn"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.25.0"
+pytest-mock = "^3.14.0"
+black = "^24.0.0"
+flake8 = "^7.0.0"
+mypy = "^1.13.0"
+
+[tool.poetry.scripts]
+qbmonitor = "qbittorrent_monitor.main:cli"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto" 
