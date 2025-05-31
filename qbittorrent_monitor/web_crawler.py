@@ -6,6 +6,7 @@
 
 import asyncio
 import logging
+import random
 import re
 import urllib.parse
 from typing import List, Dict, Optional, Set, Any
@@ -73,26 +74,40 @@ class WebCrawler:
         self.logger.info(f"🕷️ 开始抓取XXXClub搜索页面: {search_url}")
         torrents = []
         
-        # 增强的爬虫配置，更好地伪装成真实用户
+        # 增强的爬虫配置，模拟真实用户行为
         crawler_config = {
             'verbose': False,
             'browser_type': 'chromium',
             'headless': True,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
             'headers': {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Accept-Encoding': 'gzip, deflate, br',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
                 'Sec-Fetch-Dest': 'document',
                 'Sec-Fetch-Mode': 'navigate',
                 'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
                 'Cache-Control': 'max-age=0',
+                'Referer': 'https://www.google.com/',
             },
-            'page_timeout': 60000,  # 60秒超时
-            'wait_for': 3,  # 等待3秒
-            'delay_before_return_html': 2,  # 等待2秒再返回
+            'page_timeout': 90000,  # 90秒超时
+            'wait_for': 5,  # 等待5秒
+            'delay_before_return_html': 3,  # 等待3秒再返回
+            'proxy': self.config.proxy if hasattr(self.config, 'proxy') else None,
+            'viewport': {'width': 1920, 'height': 1080},
+            'timezone_id': 'Asia/Shanghai',
+            'locale': 'zh-CN',
+            'geolocation': {'latitude': 39.9042, 'longitude': 116.4074},  # 北京坐标
+            'permissions': ['geolocation'],
+            'extra_http_headers': {
+                'DNT': '1',
+                'Sec-Ch-Ua': '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+            }
         }
         
         try:
@@ -109,26 +124,38 @@ class WebCrawler:
                     
                     self.logger.info(f"📄 抓取第 {page} 页: {page_url}")
                     
-                    # 重试机制
-                    max_retries = 3
-                    retry_delay = 5
+                    # 智能重试机制
+                    max_retries = 5  # 最大重试次数增加到5次
+                    base_delay = 10  # 基础延迟10秒
                     success = False
+                    last_error = None
                     
                     for attempt in range(max_retries):
                         try:
                             if attempt > 0:
-                                self.logger.info(f"🔄 第 {page} 页重试 {attempt+1}/{max_retries}")
-                                await asyncio.sleep(retry_delay * (attempt + 1))  # 递增延迟
+                                # 指数退避 + 随机抖动
+                                delay = min(base_delay * (2 ** (attempt - 1)) + random.uniform(0, 5), 300)  # 最大不超过5分钟
+                                self.logger.info(f"🔄 第 {page} 页重试 {attempt+1}/{max_retries}, 等待 {delay:.1f} 秒")
+                                await asyncio.sleep(delay)
+                            
+                            # 动态调整爬虫参数
+                            current_config = crawler_config.copy()
+                            if attempt > 1:  # 第二次重试后增加等待时间
+                                current_config['wait_for'] = 10
+                                current_config['delay_before_return_html'] = 5
                             
                             # 使用 crawl4ai 抓取页面
                             result = await crawler.arun(
                                 url=page_url,
-                                wait_for=3,  # 等待页面加载
-                                js_code=None,  # 不执行JS
-                                css_selector="ul.tsearch li",  # 直接选择种子列表
+                                wait_for=current_config['wait_for'],
+                                js_code=None if attempt < 2 else "window.scrollTo(0, document.body.scrollHeight);",  # 第三次重试后模拟滚动
+                                css_selector="ul.tsearch li",
                                 bypass_cache=True,
-                                page_timeout=60000,  # 60秒超时
-                                delay_before_return_html=2,  # 返回前等待
+                                page_timeout=current_config['page_timeout'],
+                                delay_before_return_html=current_config['delay_before_return_html'],
+                                extra_http_headers={
+                                    'X-Requested-With': 'XMLHttpRequest' if attempt > 1 else None
+                                }
                             )
                             
                             if result.success:
@@ -324,41 +351,74 @@ class WebCrawler:
         """从种子详情页面提取磁力链接"""
         self.logger.info(f"🔗 开始提取 {len(torrents)} 个种子的磁力链接")
         
-        # 增加更强健的爬虫配置
+        # 增强型详情页爬虫配置
         crawler_config = {
             'verbose': False,
             'browser_type': 'chromium',
             'headless': True,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
             'headers': {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding': 'gzip, deflate, br',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
+                'Referer': base_url if hasattr(self, 'base_url') else 'https://www.google.com/',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+            },
+            'page_timeout': 120000,  # 120秒超时
+            'wait_for': 10,  # 等待10秒
+            'delay_before_return_html': 5,  # 返回前等待5秒
+            'viewport': {'width': 1920, 'height': 1080},
+            'timezone_id': 'Asia/Shanghai',
+            'locale': 'zh-CN',
+            'extra_http_headers': {
+                'DNT': '1',
+                'Sec-Ch-Ua': '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
             }
         }
         
         async with AsyncWebCrawler(**crawler_config) as crawler:
             for i, torrent in enumerate(torrents, 1):
-                max_retries = 3
-                retry_delay = 5  # 5秒延迟
+                max_retries = 5  # 最大重试次数增加到5次
+                base_delay = 15  # 基础延迟15秒
+                last_error = None
                 
                 for attempt in range(max_retries):
                     try:
                         if attempt > 0:
-                            self.logger.info(f"🔄 [{i}/{len(torrents)}] 重试 {attempt+1}/{max_retries}: {torrent.title[:50]}...")
+                            # 指数退避 + 随机抖动
+                            delay = min(base_delay * (2 ** (attempt - 1)) + random.uniform(0, 10), 300)  # 最大不超过5分钟
+                            self.logger.info(f"🔄 [{i}/{len(torrents)}] 重试 {attempt+1}/{max_retries}, 等待 {delay:.1f} 秒: {torrent.title[:50]}...")
+                            await asyncio.sleep(delay)
                         else:
                             self.logger.info(f"🔍 [{i}/{len(torrents)}] 提取磁力链接: {torrent.title[:50]}...")
                         
-                        # 使用更保守的爬虫设置
+                        # 动态调整爬虫参数
+                        current_config = crawler_config.copy()
+                        if attempt > 1:  # 第三次重试后增加超时和等待时间
+                            current_config['page_timeout'] = 180000  # 180秒
+                            current_config['wait_for'] = 15
+                            current_config['delay_before_return_html'] = 8
+                        
+                        # 使用智能爬虫设置
                         result = await crawler.arun(
                             url=torrent.detail_url,
-                            wait_for=3,  # 增加等待时间
-                            page_timeout=30000,  # 30秒超时
+                            wait_for=current_config['wait_for'],
+                            page_timeout=current_config['page_timeout'],
                             bypass_cache=True,
-                            delay_before_return_html=2,  # 返回前等待2秒
-                            css_selector="body",  # 等待body加载完成
+                            delay_before_return_html=current_config['delay_before_return_html'],
+                            css_selector="body",
+                            js_code="window.scrollTo(0, document.body.scrollHeight/2);" if attempt > 0 else None,
+                            extra_http_headers={
+                                'Referer': torrent.detail_url if attempt > 0 else crawler_config['headers']['Referer']
+                            }
                         )
                         
                         if not result.success:
@@ -366,16 +426,16 @@ class WebCrawler:
                             if "ERR_CONNECTION_RESET" in error_msg or "Connection reset" in error_msg:
                                 self.logger.warning(f"⚠️ 连接被重置，尝试 {attempt+1}/{max_retries}")
                                 if attempt < max_retries - 1:
-                                    await asyncio.sleep(retry_delay * (attempt + 1))  # 递增延迟
+                                    await asyncio.sleep(base_delay * (attempt + 1))  # 递增延迟
                                     continue
                             else:
                                 self.logger.warning(f"⚠️ 抓取失败: {error_msg}")
                                 if attempt < max_retries - 1:
-                                    await asyncio.sleep(retry_delay)
+                                    await asyncio.sleep(base_delay)
                                     continue
                             break
                         
-                        # 提取磁力链接
+                        # 提取磁力链接并解析文件名
                         magnet_link = await self._extract_magnet_from_content(result)
                         
                         if magnet_link and validate_magnet_link(magnet_link):
@@ -383,8 +443,13 @@ class WebCrawler:
                             torrent.status = "extracted"
                             self.stats['magnets_extracted'] += 1
                             
-                            # 检查是否重复
-                            torrent_hash, _ = parse_magnet(magnet_link)
+                            # 检查是否重复并获取文件名（保留原始标题用于显示）
+                            torrent_hash, torrent_name = parse_magnet(magnet_link)
+                            self.logger.debug(f"🔍 磁力链接解析 - 原始标题: {torrent.title} | 解析文件名: {torrent_name}")
+                            
+                            # 仅当磁力链接包含更完整的文件名时才覆盖
+                            if torrent_name and len(torrent_name) > len(torrent.title):
+                                torrent.title = torrent_name
                             if torrent_hash and torrent_hash in self.processed_hashes:
                                 torrent.status = "duplicate"
                                 self.stats['duplicates_skipped'] += 1
@@ -409,12 +474,12 @@ class WebCrawler:
                         if "ERR_CONNECTION_RESET" in error_msg or "Connection reset" in error_msg:
                             self.logger.warning(f"⚠️ 连接重置错误，尝试 {attempt+1}/{max_retries}: {torrent.title[:50]}...")
                             if attempt < max_retries - 1:
-                                await asyncio.sleep(retry_delay * (attempt + 1))
+                                await asyncio.sleep(base_delay * (attempt + 1))
                                 continue
                         else:
                             self.logger.error(f"❌ 提取失败: {torrent.title[:50]}... - {error_msg}")
                             if attempt < max_retries - 1:
-                                await asyncio.sleep(retry_delay)
+                                await asyncio.sleep(base_delay)
                                 continue
                         
                         # 最后一次尝试失败
@@ -503,8 +568,17 @@ class WebCrawler:
                 category = await self.ai_classifier.classify(torrent.title, self.config.categories)
                 torrent.category = category
                 
-                # 添加到qBittorrent
-                success = await self.qbt_client.add_torrent(torrent.magnet_link, category)
+                # 添加到qBittorrent (确保使用完整文件名)
+                torrent_hash, torrent_name = parse_magnet(torrent.magnet_link)
+                self.logger.debug(f"🔍 文件名解析结果 - 磁力链接: {torrent_name or '无'} | 标题: {torrent.title}")
+                
+                # 优先使用磁力链接解析出的完整文件名，否则使用原始标题（不做截断）
+                final_name = torrent_name if torrent_name else torrent.title
+                success = await self.qbt_client.add_torrent(
+                    torrent.magnet_link,
+                    category,
+                    torrent_name=final_name
+                )
                 
                 if success:
                     torrent.status = "added"

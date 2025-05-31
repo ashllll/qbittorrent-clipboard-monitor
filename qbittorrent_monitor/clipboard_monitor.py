@@ -59,6 +59,12 @@ class ClipboardMonitor:
             re.IGNORECASE
         )
         
+        # 通用URL正则模式
+        self.url_pattern = re.compile(
+            r"https?://[^\s]+",
+            re.IGNORECASE
+        )
+        
         # 初始化AI分类器
         self.ai_classifier = AIClassifier(config.deepseek)
         
@@ -133,10 +139,11 @@ class ClipboardMonitor:
                 self.consecutive_errors = 0
                 self.last_error_time = None
             
-            # 检查是否为XXXClub网页URL
-            elif (current_clip != self.last_clip and 
-                  current_clip and 
-                  self.xxxclub_pattern.match(current_clip.strip())):
+            # 检查是否为网页URL(XXXClub或通用URL)
+            elif (current_clip != self.last_clip and
+                  current_clip and
+                  (self.xxxclub_pattern.match(current_clip.strip()) or
+                   self.url_pattern.match(current_clip.strip()))):
                 
                 self.last_clip = current_clip
                 await self._process_url(current_clip.strip())
@@ -171,20 +178,24 @@ class ClipboardMonitor:
             return
         
         try:
-            # 解析磁力链接
+            # 解析磁力链接获取详细信息
             torrent_hash, torrent_name = parse_magnet(magnet_link)
             if not torrent_hash:
                 raise TorrentParseError("无法解析磁力链接哈希值")
             
-            # 创建记录
-            record = TorrentRecord(magnet_link, torrent_hash, torrent_name or "Unknown")
+            # 确保有有效的种子名称
+            if not torrent_name:
+                torrent_name = f"未命名_{torrent_hash[:8]}"
+            
+            # 创建记录(此时已有完整信息)
+            record = TorrentRecord(magnet_link, torrent_hash, torrent_name)
             self._add_to_history(record)
             
             self.stats['total_processed'] += 1
             
             self.logger.info(f"📁 处理种子: {record.torrent_name}")
             
-            # 检查是否重复
+            # 检查是否重复(此时已有完整信息)
             if await self._check_duplicate(record):
                 return
             
@@ -319,6 +330,7 @@ class ClipboardMonitor:
                 f"🔔 通知系统: {'已启用' if self.config.notifications.enabled else '已禁用'}",
                 "💡 支持的内容类型:",
                 "   🔗 磁力链接 (magnet:) - 自动分类添加",
+                "   🌐 网页URL (http/https) - 爬取页面内磁力链接",
                 "   🌐 XXXClub搜索URL - 批量抓取种子",
                 "📝 使用方法:",
                 "   复制磁力链接到剪贴板 → 自动添加单个种子",

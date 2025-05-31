@@ -133,7 +133,7 @@ class QBittorrentClient:
             raise QBittorrentError(f"解析分类响应失败: {str(e)}") from e
     
     async def ensure_categories(self, categories: Dict[str, CategoryConfig]):
-        """确保所有分类存在，只创建新分类，跳过更新"""
+        """确保所有分类存在，动态更新分类路径"""
         try:
             existing_categories = await self.get_existing_categories()
             
@@ -145,9 +145,13 @@ class QBittorrentClient:
                     self.logger.info(f"创建新分类: {name}")
                     await self._create_category(name, mapped_path)
                 else:
-                    # 跳过已存在分类的更新，避免权限问题
+                    # 动态更新分类路径
                     existing_path = existing_categories[name].get('savePath', '')
-                    self.logger.info(f"分类已存在，跳过更新: {name} (当前路径: {existing_path})")
+                    if existing_path != mapped_path:
+                        self.logger.info(f"更新分类路径: {name} (当前路径: {existing_path} -> 新路径: {mapped_path})")
+                        await self._update_category(name, mapped_path)
+                    else:
+                        self.logger.info(f"分类路径未变，跳过更新: {name} (路径: {existing_path})")
                         
         except Exception as e:
             self.logger.error(f"分类管理失败: {str(e)}")
@@ -225,20 +229,25 @@ class QBittorrentClient:
     
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=0.5, min=0.5, max=5),
+        wait=wait_exponential(multiplier=1, min=1, max=3),
         retry=retry_if_exception_type((NetworkError, QbtRateLimitError)),
         before_sleep=before_sleep_log(logging.getLogger('QBittorrent.AddTorrent'), logging.INFO)
     )
     async def add_torrent(self, magnet_link: str, category: str, **kwargs) -> bool:
         """添加磁力链接，支持更多选项"""
         try:
+            # 解析磁力链接，提供默认名称
             torrent_hash, torrent_name = parse_magnet(magnet_link)
             if not torrent_hash:
                 raise TorrentParseError("无效的磁力链接格式")
             
+            # 优先使用磁力链接解析出的文件名
+            display_name = torrent_name or f"磁力链接_{torrent_hash[:8]}"
+            self.logger.debug(f"原始磁力链接文件名: {torrent_name}")
+            
             # 检查是否重复
             if await self._is_duplicate(torrent_hash):
-                self.logger.info(f"跳过重复种子: {torrent_name or torrent_hash[:8]}")
+                self.logger.info(f"跳过重复种子: {display_name}")
                 return False
             
             # 验证分类存在
@@ -264,32 +273,23 @@ class QBittorrentClient:
                 if resp.status == 200:
                     response_text = await resp.text()
                     if response_text != "Fails.":
-                        self.logger.info(f"成功添加种子: {torrent_name or torrent_hash[:8]}")
+                        # 尝试获取文件名但不阻塞主流程
+                        try:
+                            torrent_info = await self.get_torrent_properties(torrent_hash)
+                            if 'name' in torrent_info and torrent_info['name']:
+                                display_name = torrent_info['name']
+                        except Exception as e:
+                            self.logger.warning(f"获取种子属性失败但不影响添加: {str(e)}")
                         
-                        # 如果有原始名称，等待种子被添加后进行重命名
-                        if torrent_name:
-                            self.logger.info(f"🔄 准备保持原始名称: {torrent_name}")
-                            
-                            # 等待种子被添加到系统中 - 增加等待时间
-                            await asyncio.sleep(2)
-                            
-                            # 尝试多次重命名，确保成功
-                            rename_success = False
-                            for attempt in range(3):
-                                if attempt > 0:
-                                    self.logger.info(f"🔄 重命名重试 #{attempt + 1}")
-                                    await asyncio.sleep(1)
-                                
-                                rename_success = await self._rename_torrent(torrent_hash, torrent_name)
-                                if rename_success:
-                                    break
-                            
-                            if rename_success:
-                                self.logger.info(f"✅ 成功保持原始名称: {torrent_name}")
-                            else:
-                                self.logger.warning(f"⚠️ 重命名失败，但种子已添加: {torrent_hash[:8]}")
-                                self.logger.warning(f"⚠️ 请手动重命名为: {torrent_name}")
+                        # 强制使用磁力链接解析出的文件名
+                        if torrent_name and len(torrent_name) > len(display_name):
+                            display_name = torrent_name
                         
+                        # 立即重命名种子
+                        if display_name:
+                            await self._rename_torrent(torrent_hash, display_name)
+                        
+                        self.logger.info(f"成功添加种子: {display_name}")
                         return True
                     else:
                         raise QBittorrentError("添加种子失败: qBittorrent返回Fails")
@@ -309,6 +309,11 @@ class QBittorrentClient:
     async def _rename_torrent(self, torrent_hash: str, new_name: str) -> bool:
         """重命名种子以保持原始名称"""
         try:
+            # 清理文件名中的非法字符
+            import re
+            new_name = re.sub(r'[\\/:*?"<>|]', '_', new_name)
+            new_name = new_name.strip()
+            
             # 使用正确的qBittorrent API端点
             url = f"{self._base_url}/api/v2/torrents/rename"
             data = {

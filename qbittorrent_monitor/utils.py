@@ -65,7 +65,11 @@ def setup_logging(level: str = "INFO", log_file: Optional[str] = None) -> loggin
 
 def parse_magnet(magnet_link: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    解析磁力链接，返回哈希值和名称
+    增强版磁力链接解析器，支持：
+    - 标准URL解析
+    - 多tracker参数
+    - 更健壮的文件名处理
+    - 详细的错误日志
     
     Args:
         magnet_link: 磁力链接字符串
@@ -73,25 +77,57 @@ def parse_magnet(magnet_link: str) -> Tuple[Optional[str], Optional[str]]:
     Returns:
         (哈希值, 名称) 元组
     """
+    logger = logging.getLogger('MagnetParser')
+    
     if not magnet_link or not magnet_link.startswith('magnet:'):
+        logger.debug("无效的磁力链接格式")
         return None, None
     
-    # 解析哈希值
-    hash_pattern = r"xt=urn:btih:([0-9a-fA-F]{40}|[0-9a-zA-Z]{32})"
-    hash_match = re.search(hash_pattern, magnet_link, re.IGNORECASE)
-    torrent_hash = hash_match.group(1).lower() if hash_match else None
-    
-    # 解析名称
-    name_pattern = r"dn=([^&]+)"
-    name_match = re.search(name_pattern, magnet_link)
-    torrent_name = None
-    if name_match:
-        try:
-            torrent_name = urllib.parse.unquote_plus(name_match.group(1))
-        except Exception:
-            torrent_name = name_match.group(1)
-    
-    return torrent_hash, torrent_name
+    try:
+        # 解析URL组件
+        parsed = urllib.parse.urlparse(magnet_link)
+        query = urllib.parse.parse_qs(parsed.query)
+        
+        # 提取哈希值
+        xt = query.get('xt', [])
+        torrent_hash = None
+        
+        for xt_val in xt:
+            if xt_val.startswith('urn:btih:'):
+                hash_val = xt_val[9:]  # 去掉urn:btih:前缀
+                # 支持Base32和Base16格式
+                if len(hash_val) == 32:
+                    torrent_hash = hash_val.lower()  # Base32
+                elif len(hash_val) == 40:
+                    torrent_hash = hash_val.lower()  # Base16
+                break
+        
+        # 提取文件名(支持多个dn参数)
+        torrent_name = None
+        dn_values = query.get('dn', [])
+        if dn_values:
+            try:
+                torrent_name = urllib.parse.unquote_plus(dn_values[0])
+                # 清理文件名
+                torrent_name = sanitize_filename(torrent_name)
+            except Exception as e:
+                logger.warning(f"文件名解码失败: {str(e)}")
+                torrent_name = dn_values[0]
+        
+        # 提取tracker列表(调试用)
+        trackers = []
+        for key in query:
+            if key.startswith('tr.') or key == 'tr':
+                trackers.extend(query[key])
+        
+        logger.debug(f"解析结果 - 哈希: {torrent_hash}, 名称: {torrent_name}, "
+                    f"trackers: {len(trackers)}个")
+        
+        return torrent_hash, torrent_name
+        
+    except Exception as e:
+        logger.error(f"磁力链接解析失败: {str(e)}")
+        return None, None
 
 
 def validate_magnet_link(magnet_link: str) -> bool:
