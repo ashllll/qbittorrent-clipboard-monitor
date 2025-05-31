@@ -1,22 +1,22 @@
 {
     "qbittorrent": {
-        "host": "192.168.1.28",
-        "port": 8989,
-        "username": "admin",
-        "password": "128012",
+        "host": "YOUR_HOST",
+        "port": "YOUR_PORT",
+        "username": "YOUR_USERNAME",
+        "password": "YOUR_PASSWORD",
         "use_https": false,
         "verify_ssl": true,
         "use_nas_paths_directly": false,
         "path_mapping": [
             {
                 "source_prefix": "/downloads",
-                "target_prefix": "/vol1/downloads",
+                "target_prefix": "/downloads",
                 "description": "Docker容器到NAS的路径映射"
             }
         ]
     },
     "deepseek": {
-        "api_key": "sk-a4e3f5d970ef4284ad239affd7688f2c",
+        "api_key": "YOUR_API_KEY",
         "model": "deepseek-chat",
         "base_url": "https://api.deepseek.com",
         "timeout": 10,
@@ -35,7 +35,7 @@
     },
     "categories": {
         "tv": {
-            "savePath": "/downloads/tv/",
+            "savePath": "/volume1/download/tvs",
             "keywords": [
                 "S01",
                 "S02",
@@ -93,7 +93,7 @@
             ]
         },
         "adult": {
-            "savePath": "/downloads/adult/",
+            "savePath": "/volume1/download/adult",
             "keywords": [
                 "成人",
                 "18+",
