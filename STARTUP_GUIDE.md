@@ -178,4 +178,4 @@ qbittorrent-clipboard-monitor/
 3. qBittorrent Web UI是否可以访问
 
 ---
-**祝你使用愉快！🎉** 
+**祝你使用愉快！🎉** 更新 STARTUP_GUIDE.md 文件，添加移除个人信息的说明
