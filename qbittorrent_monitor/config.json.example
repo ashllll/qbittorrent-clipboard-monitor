@@ -1,7 +1,7 @@
 {
     "qbittorrent": {
-        "host": "YOUR_QBITTORRENT_HOST",
-        "port": 8080,
+        "host": "YOUR_HOST",
+        "port": YOUR_PORT,
         "username": "YOUR_USERNAME",
         "password": "YOUR_PASSWORD",
         "use_https": false,
@@ -10,13 +10,13 @@
         "path_mapping": [
             {
                 "source_prefix": "/downloads",
-                "target_prefix": "/your/nas/downloads",
+                "target_prefix": "/downloads",
                 "description": "Docker容器到NAS的路径映射"
             }
         ]
     },
     "deepseek": {
-        "api_key": "YOUR_DEEPSEEK_API_KEY",
+        "api_key": "YOUR_API_KEY",
         "model": "deepseek-chat",
         "base_url": "https://api.deepseek.com",
         "timeout": 10,
@@ -35,7 +35,7 @@
     },
     "categories": {
         "tv": {
-            "savePath": "/downloads/tv/",
+            "savePath": "/volume1/download/tvs",
             "keywords": [
                 "S01",
                 "S02",
@@ -93,7 +93,7 @@
             ]
         },
         "adult": {
-            "savePath": "/downloads/adult/",
+            "savePath": "/volume1/download/adult",
             "keywords": [
                 "成人",
                 "18+",
@@ -182,4 +182,4 @@
     "hot_reload": true,
     "log_level": "INFO",
     "log_file": "magnet_monitor.log"
-} 
+}
