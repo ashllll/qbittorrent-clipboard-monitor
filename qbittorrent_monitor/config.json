@@ -1,9 +1,9 @@
 {
     "qbittorrent": {
-        "host": "YOUR_HOST",
-        "port": "YOUR_PORT",
-        "username": "YOUR_USERNAME",
-        "password": "YOUR_PASSWORD",
+        "host": "192.168.1.158",
+        "port": "8888",
+        "username": "admin",
+        "password": "128012",
         "use_https": false,
         "verify_ssl": true,
         "use_nas_paths_directly": false,
@@ -16,7 +16,7 @@
         ]
     },
     "deepseek": {
-        "api_key": "YOUR_API_KEY",
+        "api_key": "sk-d2484100bf1444b6a8ee278dcf9ed69b",
         "model": "deepseek-chat",
         "base_url": "https://api.deepseek.com",
         "timeout": 10,

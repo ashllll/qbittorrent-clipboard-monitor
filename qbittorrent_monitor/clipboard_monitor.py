@@ -183,23 +183,49 @@ class ClipboardMonitor:
             if not torrent_hash:
                 raise TorrentParseError("无法解析磁力链接哈希值")
             
-            # 确保有有效的种子名称
-            if not torrent_name:
-                torrent_name = f"未命名_{torrent_hash[:8]}"
+            # 检查是否重复（使用哈希值检查）
+            if await self.qbt._is_duplicate(torrent_hash):
+                self.logger.info(f"⚠️ 跳过重复种子: {torrent_hash[:8]}")
+                self.stats['duplicates_skipped'] += 1
+                return
             
-            # 创建记录(此时已有完整信息)
+            # 如果磁力链接没有dn参数（显示名），先添加种子再获取真实名称
+            temp_added = False
+            if not torrent_name:
+                self.logger.info("📥 磁力链接缺少文件名，先添加种子以获取真实名称...")
+                
+                # 使用临时分类先添加种子
+                temp_success = await self.qbt.add_torrent(magnet_link, "other")
+                if not temp_success:
+                    self.logger.error("❌ 添加种子失败")
+                    return
+                
+                temp_added = True
+                
+                # 等待一段时间让qBittorrent处理种子
+                await asyncio.sleep(2)
+                
+                # 获取种子的真实名称
+                try:
+                    torrent_info = await self.qbt.get_torrent_properties(torrent_hash)
+                    if 'name' in torrent_info and torrent_info['name']:
+                        torrent_name = torrent_info['name']
+                        self.logger.info(f"📁 获取到真实文件名: {torrent_name}")
+                    else:
+                        torrent_name = f"未命名_{torrent_hash[:8]}"
+                        self.logger.warning(f"⚠️ 无法获取真实文件名，使用: {torrent_name}")
+                except Exception as e:
+                    torrent_name = f"未命名_{torrent_hash[:8]}"
+                    self.logger.warning(f"⚠️ 获取种子信息失败: {str(e)}，使用: {torrent_name}")
+            
+            # 创建记录
             record = TorrentRecord(magnet_link, torrent_hash, torrent_name)
             self._add_to_history(record)
-            
             self.stats['total_processed'] += 1
             
             self.logger.info(f"📁 处理种子: {record.torrent_name}")
             
-            # 检查是否重复(此时已有完整信息)
-            if await self._check_duplicate(record):
-                return
-            
-            # AI分类
+            # AI分类（使用真实的种子名称）
             category = await self._classify_torrent(record)
             record.category = category
             
@@ -207,42 +233,54 @@ class ClipboardMonitor:
             save_path = await self._get_save_path(category)
             record.save_path = save_path
             
-            # 添加到qBittorrent
-            success = await self._add_torrent_to_client(record)
-            
-            if success:
-                record.status = "success"
-                self.stats['successful_adds'] += 1
-                await self.notification_manager.send_torrent_success(
-                    record.torrent_name,
-                    record.category,
-                    record.save_path or "默认路径",
-                    record.torrent_hash,
-                    record.classification_method or "AI"
-                )
-                self.logger.info(f"✅ 成功添加种子: {record.torrent_name} -> {category}")
-            else:
-                record.status = "failed"
-                self.stats['failed_adds'] += 1
-                await self.notification_manager.send_torrent_failure(
-                    record.torrent_name,
-                    record.error_message or "添加失败",
-                    record.torrent_hash,
-                    record.category or ""
-                )
+            # 如果之前临时添加了种子，现在需要更新分类
+            if temp_added:
+                self.logger.info(f"🔄 更新种子分类: {category}")
+                # 更新种子分类
+                if category != "other":
+                    try:
+                        url = f"{self.qbt._base_url}/api/v2/torrents/setCategory"
+                        data = {
+                            'hashes': torrent_hash,
+                            'category': category
+                        }
+                        async with self.qbt.session.post(url, data=data) as resp:
+                            if resp.status == 200:
+                                self.logger.info(f"✅ 种子分类已更新: {category}")
+                            else:
+                                self.logger.warning(f"⚠️ 更新分类失败: HTTP {resp.status}")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ 更新分类异常: {str(e)}")
                 
+                record.status = "success"
+            else:
+                # 正常添加种子（磁力链接有完整名称）
+                success = await self._add_torrent_to_client(record)
+                if not success:
+                    return
+            
+            # 发送通知
+            await self._send_success_notification(record)
+            
+            self.stats['successful_adds'] += 1
+            self.logger.info(f"✅ 成功添加种子: {record.torrent_name} -> {record.category}")
+            
         except Exception as e:
             self.logger.error(f"❌ 处理磁力链接失败: {str(e)}")
-            if 'record' in locals():
-                record.status = "failed"
-                record.error_message = str(e)
-                self.stats['failed_adds'] += 1
-                await self.notification_manager.send_torrent_failure(
-                    record.torrent_name,
-                    str(e),
-                    record.torrent_hash,
-                    record.category or ""
-                )
+            self.stats['errors'] += 1
+    
+    async def _send_success_notification(self, record: TorrentRecord):
+        """发送成功通知"""
+        try:
+            await self.notification_manager.send_torrent_success(
+                record.torrent_name,
+                record.category,
+                record.save_path or "默认路径",
+                record.torrent_hash,
+                record.classification_method or "AI"
+            )
+        except Exception as e:
+            self.logger.warning(f"发送通知失败: {str(e)}")
     
     async def _check_duplicate(self, record: TorrentRecord) -> bool:
         """检查种子是否重复"""
@@ -306,18 +344,33 @@ class ClipboardMonitor:
         return "默认路径"
     
     async def _add_torrent_to_client(self, record: TorrentRecord) -> bool:
-        """添加种子到qBittorrent客户端"""
+        """将种子添加到qBittorrent客户端"""
         try:
+            # 准备要传递给客户端的额外参数
+            torrent_params = {
+                'paused': self.config.add_torrents_paused
+            }
+            # 只有在提供了明确的重命名时才添加rename参数
+            if record.torrent_name:
+                torrent_params['rename'] = record.torrent_name
+
+            # 添加种子
             success = await self.qbt.add_torrent(
-                record.magnet_link, 
-                record.category or "other"
+                record.magnet_link,
+                record.category or "other",
+                **torrent_params
             )
             
-            return success
+            if not success:
+                # 如果初始添加不成功（例如，因为哈希已经存在），则返回False
+                record.error_message = "添加到客户端失败"
+                return False
+                
+            return True
             
         except Exception as e:
-            record.error_message = str(e)
-            self.logger.error(f"❌ 添加种子失败: {str(e)}")
+            self.logger.error(f"添加种子到qBittorrent时出错: {str(e)}")
+            record.error_message = f"客户端错误: {str(e)}"
             return False
     
     def _show_welcome_message(self):

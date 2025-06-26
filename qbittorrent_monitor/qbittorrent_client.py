@@ -241,7 +241,7 @@ class QBittorrentClient:
             if not torrent_hash:
                 raise TorrentParseError("无效的磁力链接格式")
             
-            # 优先使用磁力链接解析出的文件名
+            # 如果磁力链接没有dn参数，尝试从种子属性获取名称
             display_name = torrent_name or f"磁力链接_{torrent_hash[:8]}"
             self.logger.debug(f"原始磁力链接文件名: {torrent_name}")
             
@@ -273,23 +273,20 @@ class QBittorrentClient:
                 if resp.status == 200:
                     response_text = await resp.text()
                     if response_text != "Fails.":
-                        # 尝试获取文件名但不阻塞主流程
+                        # 种子添加成功，获取实际的种子名称（但不强制重命名）
                         try:
+                            # 等待短暂时间让qBittorrent处理种子
+                            await asyncio.sleep(1)
                             torrent_info = await self.get_torrent_properties(torrent_hash)
                             if 'name' in torrent_info and torrent_info['name']:
-                                display_name = torrent_info['name']
+                                actual_name = torrent_info['name']
+                                self.logger.info(f"成功添加种子: {actual_name}")
+                            else:
+                                self.logger.info(f"成功添加种子: {display_name}")
                         except Exception as e:
                             self.logger.warning(f"获取种子属性失败但不影响添加: {str(e)}")
+                            self.logger.info(f"成功添加种子: {display_name}")
                         
-                        # 强制使用磁力链接解析出的文件名
-                        if torrent_name and len(torrent_name) > len(display_name):
-                            display_name = torrent_name
-                        
-                        # 立即重命名种子
-                        if display_name:
-                            await self._rename_torrent(torrent_hash, display_name)
-                        
-                        self.logger.info(f"成功添加种子: {display_name}")
                         return True
                     else:
                         raise QBittorrentError("添加种子失败: qBittorrent返回Fails")

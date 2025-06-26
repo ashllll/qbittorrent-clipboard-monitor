@@ -12,6 +12,7 @@ import urllib.parse
 from typing import List, Dict, Optional, Set, Any
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from crawl4ai import AsyncWebCrawler, LLMConfig
 from crawl4ai.extraction_strategy import LLMExtractionStrategy, CosineStrategy
@@ -540,84 +541,82 @@ class WebCrawler:
             return None
     
     async def add_torrents_to_qbittorrent(self, torrents: List[TorrentInfo]) -> List[TorrentInfo]:
-        """将种子添加到qBittorrent"""
-        valid_torrents = [t for t in torrents if t.status == "extracted" and t.magnet_link]
-        
-        if not valid_torrents:
-            self.logger.warning("⚠️ 没有有效的种子可以添加")
-            return torrents
-        
-        self.logger.info(f"📥 开始添加 {len(valid_torrents)} 个种子到qBittorrent")
-        
-        for i, torrent in enumerate(valid_torrents, 1):
+        """
+        将种子批量添加到qBittorrent并处理分类、重命名等
+
+        Args:
+            torrents: 待添加的种子信息列表
+
+        Returns:
+            处理后的种子信息列表
+        """
+        if not torrents:
+            return []
+
+        self.logger.info(f"➕ 开始批量添加 {len(torrents)} 个种子到qBittorrent...")
+
+        # 检查并创建基础下载目录
+        base_download_dir = Path(self.config.qbt.base_download_path)
+        if not base_download_dir.exists():
+            self.logger.warning(f"基础下载目录 {base_download_dir} 不存在，将尝试创建")
             try:
-                self.logger.info(f"📥 [{i}/{len(valid_torrents)}] 添加种子: {torrent.title[:50]}...")
+                base_download_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                self.logger.error(f"❌ 创建基础下载目录失败: {e}")
+                for t in torrents:
+                    t.status = "failed"
+                return torrents
+
+        for torrent in torrents:
+            if not torrent.magnet_link or torrent.status != "extracted":
+                continue
+
+            try:
+                # 1. AI分类
+                if self.config.web_crawler.ai_classify_torrents:
+                    self.logger.info(f"🧠 正在为 '{torrent.title}' 进行AI分类...")
+                    category, new_name = await self.ai_classifier.classify_torrent(torrent.title)
+                    torrent.category = category
+                    self.logger.info(f"   - AI分类结果: '{category}'")
+                else:
+                    torrent.category = "default"
                 
-                # 检查是否已存在
-                torrent_hash, _ = parse_magnet(torrent.magnet_link)
-                if torrent_hash and await self.qbt_client._is_duplicate(torrent_hash):
-                    torrent.status = "duplicate"
-                    self.stats['duplicates_skipped'] += 1
-                    
-                    await self.notification_manager.send_duplicate_notification(
-                        torrent.title, torrent_hash
-                    )
-                    continue
-                
-                # AI分类
-                category = await self.ai_classifier.classify(torrent.title, self.config.categories)
-                torrent.category = category
-                
-                # 添加到qBittorrent (确保使用完整文件名)
-                torrent_hash, torrent_name = parse_magnet(torrent.magnet_link)
-                self.logger.debug(f"🔍 文件名解析结果 - 磁力链接: {torrent_name or '无'} | 标题: {torrent.title}")
-                
-                # 优先使用磁力链接解析出的完整文件名，否则使用原始标题（不做截断）
-                final_name = torrent_name if torrent_name else torrent.title
+                # 2. 获取保存路径
+                save_path = await self._get_category_save_path(torrent.category)
+
+                # 3. 添加种子到qBittorrent (不进行重命名)
                 success = await self.qbt_client.add_torrent(
                     torrent.magnet_link,
-                    category,
-                    torrent_name=final_name
+                    save_path=save_path,
+                    category=torrent.category,
+                    paused=self.config.web_crawler.add_torrents_paused
                 )
-                
+
                 if success:
-                    torrent.status = "added"
                     self.stats['torrents_added'] += 1
-                    
-                    # 获取保存路径
-                    save_path = await self._get_category_save_path(category)
-                    
-                    await self.notification_manager.send_torrent_success(
-                        torrent.title,
-                        category,
-                        save_path,
-                        torrent_hash or "unknown",
-                        "AI"
-                    )
-                    
-                    self.logger.info(f"✅ 成功添加: {torrent.title[:30]}... -> {category}")
+                    torrent.status = "added"
+                    self.logger.info(f"✅ 成功添加种子: {torrent.title}")
                 else:
-                    torrent.status = "failed"
-                    self.stats['errors'] += 1
-                    
-                    await self.notification_manager.send_torrent_failure(
-                        torrent.title,
-                        "qBittorrent添加失败",
-                        torrent_hash or "unknown",
-                        category
-                    )
-                
-                # 添加间隔
-                await asyncio.sleep(1)
-                
+                    # 可能是因为哈希已经存在
+                    if await self.qbt_client.is_duplicate(torrent.magnet_link):
+                        self.stats['duplicates_skipped'] += 1
+                        torrent.status = "duplicate"
+                        self.logger.warning(f"⚠️ 跳过重复的种子: {torrent.title}")
+                    else:
+                        self.stats['errors'] += 1
+                        torrent.status = "failed"
+                        self.logger.error(f"❌ 添加种子失败: {torrent.title}")
+
             except Exception as e:
                 torrent.status = "failed"
                 self.stats['errors'] += 1
-                self.logger.error(f"❌ 添加种子失败: {torrent.title[:50]}... - {str(e)}")
-        
-        successful_adds = len([t for t in torrents if t.status == "added"])
-        self.logger.info(f"🎯 种子添加完成: {successful_adds} 个成功添加")
-        
+                self.logger.error(f"❌ 处理种子 '{torrent.title}' 时发生意外错误: {e}")
+                import traceback
+                self.logger.debug(traceback.format_exc())
+
+        # 批量完成后发送一次通知
+        await self._notify_completion(torrents)
+            
         return torrents
     
     async def _get_category_save_path(self, category: str) -> str:

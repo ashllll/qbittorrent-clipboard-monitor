@@ -248,18 +248,15 @@ def test_connection(config: Optional[str]):
             app_config = await config_manager.load_config()
             
             click.echo("正在测试qBittorrent连接...")
-            
-            async with QBittorrentClient(app_config.qbittorrent) as qbt:
+            qbt_client = QBittorrentClient(app_config.qbittorrent, app_config)
+            async with qbt_client as qbt:
                 version = await qbt.get_version()
-                click.echo(f"✅ 连接成功! qBittorrent版本: {version}")
-                
-                categories = await qbt.get_existing_categories()
-                click.echo(f"   - 现有分类: {len(categories)} 个")
+                click.echo(f"✅ 连接成功！qBittorrent版本: {version}")
                 
         except Exception as e:
             click.echo(f"❌ 连接失败: {str(e)}", err=True)
             sys.exit(1)
-    
+            
     asyncio.run(test())
 
 
@@ -271,7 +268,7 @@ def create_config():
     if config_path.exists():
         if not click.confirm(f"配置文件 {config_path} 已存在，是否覆盖？"):
             return
-    
+            
     try:
         config_manager = ConfigManager(config_path)
         config_manager._create_default_config()

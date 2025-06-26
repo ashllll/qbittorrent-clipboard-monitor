@@ -80,3 +80,24 @@ credentials.json
 # 导出的结果文件
 # results.json
 # *.json # 取消注释以忽略所有json文件 
+# 开发环境
+logs/
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 配置文件（敏感信息）
+configs/config.json
+!configs/config.json.example
