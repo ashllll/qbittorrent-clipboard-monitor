@@ -170,6 +170,20 @@
     "check_interval": 0.5,
     "max_retries": 3,
     "retry_delay": 2,
+    "web_crawler": {
+        "enabled": true,
+        "page_timeout": 60000,
+        "wait_for": 3,
+        "delay_before_return": 2,
+        "max_retries": 3,
+        "base_delay": 5,
+        "max_delay": 60,
+        "max_concurrent_extractions": 3,
+        "inter_request_delay": 1.5,
+        "ai_classify_torrents": true,
+        "add_torrents_paused": false,
+        "proxy": null
+    },
     "notifications": {
         "enabled": true,
         "console": {

@@ -96,6 +96,27 @@ class ConsoleNotificationConfig(BaseModel):
     show_statistics: bool = True
 
 
+class WebCrawlerConfig(BaseModel):
+    """网页爬虫配置"""
+    enabled: bool = True
+    # 性能参数
+    page_timeout: int = 60000  # 页面超时时间(毫秒)
+    wait_for: int = 3  # 页面加载等待时间(秒)
+    delay_before_return: int = 2  # 返回前等待时间(秒)
+    # 重试配置
+    max_retries: int = 3  # 最大重试次数
+    base_delay: int = 5  # 基础延迟时间(秒)
+    max_delay: int = 60  # 最大延迟时间(秒)
+    # 并发配置
+    max_concurrent_extractions: int = 3  # 最大并发提取数
+    inter_request_delay: float = 1.5  # 请求间延迟(秒)
+    # AI分类配置
+    ai_classify_torrents: bool = True
+    add_torrents_paused: bool = False
+    # 代理配置
+    proxy: Optional[str] = None
+
+
 class NotificationConfig(BaseModel):
     """通知配置"""
     enabled: bool = False
@@ -119,6 +140,8 @@ class AppConfig(BaseModel):
     check_interval: float = 2.0
     max_retries: int = 3
     retry_delay: float = 5.0
+    # 网页爬虫配置
+    web_crawler: WebCrawlerConfig = WebCrawlerConfig()
     # 通知配置
     notifications: NotificationConfig = NotificationConfig()
     # 热加载配置
