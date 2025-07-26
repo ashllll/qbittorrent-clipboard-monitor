@@ -145,7 +145,9 @@ class QBittorrentMonitorApp:
         """设置信号处理器"""
         def signal_handler(signum, frame):
             self.logger.info(f"收到信号 {signum}")
-            asyncio.create_task(self._shutdown())
+            # 不要在信号处理函数中直接创建协程任务
+            # 改为设置事件标志
+            self.shutdown_event.set()
         
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)

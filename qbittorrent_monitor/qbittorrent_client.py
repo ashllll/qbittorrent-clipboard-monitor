@@ -185,12 +185,35 @@ class QBittorrentClient:
             async with self.session.post(url, data=data) as resp:
                 if resp.status == 200:
                     self.logger.info(f"更新分类成功: {name} -> {save_path}")
+                elif resp.status == 409:
+                    # 如果更新失败，尝试先删除再创建
+                    self.logger.warning(f"更新分类失败，尝试重新创建: {name}")
+                    await self._delete_category(name)
+                    await self._create_category(name, save_path)
                 else:
                     error_text = await resp.text()
-                    raise QBittorrentError(f"更新分类失败: {error_text}")
+                    # 当更新分类失败时，尝试删除并重新创建
+                    self.logger.warning(f"更新分类失败: {error_text}，尝试重新创建")
+                    await self._delete_category(name)
+                    await self._create_category(name, save_path)
                     
         except aiohttp.ClientError as e:
             raise NetworkError(f"更新分类网络错误: {str(e)}") from e
+    
+    async def _delete_category(self, name: str):
+        """删除分类"""
+        url = f"{self._base_url}/api/v2/torrents/removeCategories"
+        data = {'categories': name}
+        
+        try:
+            async with self.session.post(url, data=data) as resp:
+                if resp.status == 200:
+                    self.logger.info(f"删除分类成功: {name}")
+                else:
+                    error_text = await resp.text()
+                    raise QBittorrentError(f"删除分类失败: {error_text}")
+        except aiohttp.ClientError as e:
+            raise NetworkError(f"删除分类网络错误: {str(e)}") from e
     
     def _map_save_path(self, original_path: str, category_name: str = "") -> str:
         """增强的路径映射功能"""

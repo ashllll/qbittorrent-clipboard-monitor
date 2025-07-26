@@ -213,7 +213,10 @@ class DeepSeekClassifier(BaseAIClassifier):
                     if rule_score > 0:
                         score += rule_score
                         matched_items.append(f"{rule.get('type', 'unknown')}(+{rule_score})")
-            
+                    elif rule_score < 0:
+                        # 应用排除规则
+                        score += rule_score  # 负分
+                        
             # 处理传统关键词
             for keyword in cat_config.keywords:
                 if keyword.lower() in name_lower:
@@ -237,10 +240,13 @@ class DeepSeekClassifier(BaseAIClassifier):
         
         # 选择最高分的分类
         if category_scores:
-            best_category = max(category_scores.items(), key=lambda x: x[1])[0]
-            scores_display = ", ".join([f"{k}: {v:.1f}" for k, v in category_scores.items()])
-            self.logger.info(f"规则引擎分类结果: {best_category} (所有分数: {scores_display})")
-            return best_category
+            # 过滤掉负分的分类
+            positive_scores = {k: v for k, v in category_scores.items() if v > 0}
+            if positive_scores:
+                best_category = max(positive_scores.items(), key=lambda x: x[1])[0]
+                scores_display = ", ".join([f"{k}: {v:.1f}" for k, v in positive_scores.items()])
+                self.logger.info(f"规则引擎分类结果: {best_category} (所有分数: {scores_display})")
+                return best_category
         
         self.logger.info("规则引擎未找到匹配，返回 'other'")
         return "other"

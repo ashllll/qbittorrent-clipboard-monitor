@@ -175,6 +175,7 @@ class ClipboardMonitor:
         # 验证磁力链接格式
         if not validate_magnet_link(magnet_link):
             self.logger.error("❌ 无效的磁力链接格式")
+            self.stats['failed_adds'] += 1
             return
         
         try:
@@ -198,6 +199,7 @@ class ClipboardMonitor:
                 temp_success = await self.qbt.add_torrent(magnet_link, "other")
                 if not temp_success:
                     self.logger.error("❌ 添加种子失败")
+                    self.stats['failed_adds'] += 1
                     return
                 
                 temp_added = True
@@ -267,7 +269,7 @@ class ClipboardMonitor:
             
         except Exception as e:
             self.logger.error(f"❌ 处理磁力链接失败: {str(e)}")
-            self.stats['errors'] += 1
+            self.stats['failed_adds'] += 1
     
     async def _send_success_notification(self, record: TorrentRecord):
         """发送成功通知"""
@@ -568,7 +570,7 @@ class ClipboardMonitor:
                 self.stats['total_processed'] += stats.get('torrents_found', 0)
                 self.stats['successful_adds'] += stats.get('torrents_added', 0)
                 self.stats['duplicates_skipped'] += stats.get('duplicates_skipped', 0)
-                self.stats['failed_adds'] += stats.get('errors', 0)
+                self.stats['failed_adds'] += stats.get('failed_adds', 0)
                 
                 if stats.get('torrents_added', 0) > 0:
                     self.stats['batch_adds'] += 1

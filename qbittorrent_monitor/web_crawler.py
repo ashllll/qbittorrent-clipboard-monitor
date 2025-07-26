@@ -364,7 +364,7 @@ class WebCrawler:
                 'Accept-Encoding': 'gzip, deflate, br',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
-                'Referer': base_url if hasattr(self, 'base_url') else 'https://www.google.com/',
+                'Referer': 'https://www.google.com/',
                 'Sec-Fetch-Dest': 'document',
                 'Sec-Fetch-Mode': 'navigate',
                 'Sec-Fetch-Site': 'same-origin',
@@ -462,6 +462,7 @@ class WebCrawler:
                             break  # 成功，跳出重试循环
                         else:
                             if attempt < max_retries - 1:
+                                retry_delay = base_delay * (attempt + 1)
                                 self.logger.warning(f"⚠️ 未找到磁力链接，重试 {attempt+1}/{max_retries}")
                                 await asyncio.sleep(retry_delay)
                                 continue
@@ -555,31 +556,21 @@ class WebCrawler:
 
         self.logger.info(f"➕ 开始批量添加 {len(torrents)} 个种子到qBittorrent...")
 
-        # 检查并创建基础下载目录
-        base_download_dir = Path(self.config.qbt.base_download_path)
-        if not base_download_dir.exists():
-            self.logger.warning(f"基础下载目录 {base_download_dir} 不存在，将尝试创建")
-            try:
-                base_download_dir.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                self.logger.error(f"❌ 创建基础下载目录失败: {e}")
-                for t in torrents:
-                    t.status = "failed"
-                return torrents
-
         for torrent in torrents:
             if not torrent.magnet_link or torrent.status != "extracted":
                 continue
 
             try:
                 # 1. AI分类
-                if self.config.web_crawler.ai_classify_torrents:
+                # 使用配置中的AI分类设置
+                ai_classify_enabled = hasattr(self.config, 'ai_classify_torrents') and self.config.ai_classify_torrents
+                if ai_classify_enabled and self.config.deepseek.api_key:
                     self.logger.info(f"🧠 正在为 '{torrent.title}' 进行AI分类...")
-                    category, new_name = await self.ai_classifier.classify_torrent(torrent.title)
+                    category = await self.ai_classifier.classify(torrent.title, self.config.categories)
                     torrent.category = category
                     self.logger.info(f"   - AI分类结果: '{category}'")
                 else:
-                    torrent.category = "default"
+                    torrent.category = "other"
                 
                 # 2. 获取保存路径
                 save_path = await self._get_category_save_path(torrent.category)
@@ -587,9 +578,9 @@ class WebCrawler:
                 # 3. 添加种子到qBittorrent (不进行重命名)
                 success = await self.qbt_client.add_torrent(
                     torrent.magnet_link,
-                    save_path=save_path,
-                    category=torrent.category,
-                    paused=self.config.web_crawler.add_torrents_paused
+                    torrent.category,
+                    # 使用配置中的暂停设置，如果没有则默认为False
+                    paused=getattr(self.config, 'add_torrents_paused', False)
                 )
 
                 if success:
@@ -598,7 +589,7 @@ class WebCrawler:
                     self.logger.info(f"✅ 成功添加种子: {torrent.title}")
                 else:
                     # 可能是因为哈希已经存在
-                    if await self.qbt_client.is_duplicate(torrent.magnet_link):
+                    if await self.qbt_client._is_duplicate(torrent.magnet_link):
                         self.stats['duplicates_skipped'] += 1
                         torrent.status = "duplicate"
                         self.logger.warning(f"⚠️ 跳过重复的种子: {torrent.title}")
@@ -650,6 +641,44 @@ class WebCrawler:
         }
         self.processed_hashes.clear()
     
+    async def _notify_completion(self, torrents: List[TorrentInfo]):
+        """通知批量处理完成"""
+        added_count = len([t for t in torrents if t.status == "added"])
+        failed_count = len([t for t in torrents if t.status == "failed"])
+        duplicate_count = len([t for t in torrents if t.status == "duplicate"])
+        
+        if self.config.notifications.console.enabled:
+            if self.notification_manager.use_colors:
+                from colorama import Fore, Style
+                print(f"\n{Fore.GREEN}✅ 批量处理完成!")
+                print(f"{Fore.CYAN}📊 处理结果:")
+                print(f"   成功添加: {Fore.GREEN}{added_count}")
+                print(f"   失败数量: {Fore.RED}{failed_count}")
+                print(f"   重复跳过: {Fore.YELLOW}{duplicate_count}")
+                print(f"{Fore.GREEN}{'─'*50}{Style.RESET_ALL}")
+            else:
+                print(f"\n✅ 批量处理完成!")
+                print(f"📊 处理结果:")
+                print(f"   成功添加: {added_count}")
+                print(f"   失败数量: {failed_count}")
+                print(f"   重复跳过: {duplicate_count}")
+                print(f"{'─'*50}")
+
+        # 发送通知
+        try:
+            await self.notification_manager.send_statistics({
+                'total_processed': len(torrents),
+                'successful_adds': added_count,
+                'failed_adds': failed_count,
+                'duplicates_skipped': duplicate_count,
+                'ai_classifications': 0,  # 暂时设置为0
+                'rule_classifications': 0,  # 暂时设置为0
+                'url_crawls': 1,
+                'batch_adds': 1 if added_count > 0 else 0
+            })
+        except Exception as e:
+            self.logger.warning(f"发送完成通知失败: {str(e)}")
+
     async def extract_magnet_links_fallback(self, torrents: List[TorrentInfo]) -> List[TorrentInfo]:
         """
         备用方法：当详情页面抓取失败时的处理方案

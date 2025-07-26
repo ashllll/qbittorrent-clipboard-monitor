@@ -296,6 +296,9 @@ class SimpleNotificationManager:
         # 检查颜色支持
         self.use_colors = HAS_COLORAMA and config.get('console', {}).get('colored', True)
         
+        # 获取base_url配置
+        self.base_url = config.get('qbittorrent', {}).get('base_url', 'http://localhost:8080')
+        
     async def send_torrent_success(self, torrent_name: str, category: str, 
                                   save_path: str, torrent_hash: str, 
                                   classification_method: str = "AI"):
@@ -420,6 +423,29 @@ class SimpleNotificationManager:
         """获取当前时间戳"""
         from datetime import datetime
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+    async def _notify_completion(self, torrents: List[TorrentInfo]):
+        """通知批量处理完成"""
+        added_count = len([t for t in torrents if t.status == "added"])
+        failed_count = len([t for t in torrents if t.status == "failed"])
+        duplicate_count = len([t for t in torrents if t.status == "duplicate"])
+        
+        if self.config.get('console', {}).get('enabled', True):
+            if self.use_colors:
+                print(f"\n{Fore.GREEN}✅ 批量处理完成!")
+                print(f"{Fore.CYAN}📊 处理结果:")
+                print(f"   成功添加: {Fore.GREEN}{added_count}")
+                print(f"   失败数量: {Fore.RED}{failed_count}")
+                print(f"   重复跳过: {Fore.YELLOW}{duplicate_count}")
+                print(f"{Fore.GREEN}{'─'*50}{Style.RESET_ALL}")
+            else:
+                print(f"\n✅ 批量处理完成!")
+                print(f"📊 处理结果:")
+                print(f"   成功添加: {added_count}")
+                print(f"   失败数量: {failed_count}")
+                print(f"   重复跳过: {duplicate_count}")
+                print(f"{'─'*50}")
 
 
 # 为了保持向后兼容性，创建一个别名

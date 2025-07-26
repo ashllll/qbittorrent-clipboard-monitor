@@ -126,6 +126,10 @@ class AppConfig(BaseModel):
     # 日志配置
     log_level: str = "INFO"
     log_file: Optional[str] = "magnet_monitor.log"
+    # 添加缺失的配置属性
+    add_torrents_paused: bool = False
+    ai_classify_torrents: bool = True
+    proxy: Optional[str] = None
 
 
 class ConfigFileHandler(FileSystemEventHandler):
