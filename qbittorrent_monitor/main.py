@@ -1,11 +1,11 @@
-"""
-主程序模块
+"""主程序模块
 
 支持：
 - CLI界面
 - 优雅关闭
 - 信号处理
 - 状态监控
+- 性能监控和日志优化
 """
 
 import asyncio
@@ -21,6 +21,8 @@ from .qbittorrent_client import QBittorrentClient
 from .clipboard_monitor import ClipboardMonitor
 from .utils import setup_logging, get_config_path
 from .exceptions import ConfigError, QBittorrentError
+from .performance_monitor import setup_global_monitor, cleanup_global_monitor, get_global_monitor
+from .log_optimizer import setup_global_optimizer, cleanup_global_optimizer, get_optimized_logger
 
 
 class QBittorrentMonitorApp:
@@ -35,73 +37,84 @@ class QBittorrentMonitorApp:
         self.logger: Optional[logging.Logger] = None
         self.shutdown_event = asyncio.Event()
         
+        # 性能监控和日志优化
+        self.performance_monitor = None
+        self.log_optimizer = None
+        
     async def initialize(self):
         """初始化应用程序"""
         # 加载配置
         self.config_manager = ConfigManager(self.config_path)
         self.config = await self.config_manager.load_config()
         
-        # 配置日志
-        self.logger = setup_logging(
-            level=self.config.log_level,
-            log_file=self.config.log_file
-        )
+        # 设置日志优化器
+        await self._setup_logging()
         
-        self.logger.info("=" * 60)
-        self.logger.info("QBittorrent剪贴板监控工具启动")
-        self.logger.info("=" * 60)
+        # 设置性能监控
+        await self._setup_performance_monitoring()
         
-        # 注册配置重载回调
-        self.config_manager.register_reload_callback(self._on_config_reload)
+        # 初始化qBittorrent客户端
+        self.qbt_client = QBittorrentClient(self.config.qbittorrent, self.config)
+        await self.qbt_client.__aenter__()
+        
+        # 初始化剪贴板监控器（使用配置中的客户端）
+        self.clipboard_monitor = ClipboardMonitor(self.qbt_client, self.config)
+        
+        # 设置配置重载回调
+        self.config_manager.set_reload_callback(self._on_config_reload)
         
         self.logger.info("应用程序初始化完成")
     
     async def start(self):
         """启动应用程序"""
         try:
+            # 初始化应用程序
             await self.initialize()
             
-            # 初始化qBittorrent客户端
-            self.qbt_client = QBittorrentClient(
-                self.config.qbittorrent,
-                app_config=self.config
-            )
+            self.logger.info("=" * 60)
+            self.logger.info("QBittorrent剪贴板监控工具启动")
+            self.logger.info(f"配置文件: {self.config_path}")
+            self.logger.info(f"qBittorrent: {self.config.qbittorrent.host}:{self.config.qbittorrent.port}")
+            self.logger.info(f"监控间隔: {self.config.clipboard_check_interval}秒")
+            self.logger.info(f"分类数量: {len(self.config.categories)}")
+            self.logger.info("=" * 60)
             
-            async with self.qbt_client as qbt:
-                # 确保分类存在
-                self.logger.info("检查并创建qBittorrent分类...")
-                await qbt.ensure_categories(self.config.categories)
-                
-                # 初始化剪贴板监控器
-                self.clipboard_monitor = ClipboardMonitor(qbt, self.config)
-                
-                # 设置信号处理
-                self._setup_signal_handlers()
-                
-                self.logger.info("所有组件初始化完成，开始监控...")
-                
-                # 启动监控循环
-                monitor_task = asyncio.create_task(self.clipboard_monitor.start())
-                status_task = asyncio.create_task(self._status_reporter())
-                
-                # 等待关闭信号
-                await self.shutdown_event.wait()
-                
-                self.logger.info("收到关闭信号，正在优雅关闭...")
-                
-                # 停止监控
+            # 设置信号处理器
+            self._setup_signal_handlers()
+            
+            # 确保qBittorrent分类存在
+            self.logger.info("检查并创建qBittorrent分类...")
+            await self.qbt_client.ensure_categories(self.config.categories)
+            
+            self.logger.info("所有组件初始化完成，开始监控...")
+            
+            # 启动监控循环
+            monitor_task = asyncio.create_task(self.clipboard_monitor.start())
+            status_task = asyncio.create_task(self._status_reporter())
+            
+            # 等待关闭信号
+            await self.shutdown_event.wait()
+            
+            self.logger.info("收到关闭信号，正在优雅关闭...")
+            
+            # 停止监控
+            if hasattr(self.clipboard_monitor, 'stop'):
                 self.clipboard_monitor.stop()
-                
-                # 等待任务完成
-                try:
-                    await asyncio.wait_for(monitor_task, timeout=10.0)
-                except asyncio.TimeoutError:
-                    self.logger.warning("监控任务未能在超时时间内停止")
-                    monitor_task.cancel()
-                
-                status_task.cancel()
-                
-                self.logger.info("应用程序已安全关闭")
+            
+            # 等待任务完成
+            try:
+                await asyncio.wait_for(monitor_task, timeout=10.0)
+            except asyncio.TimeoutError:
+                self.logger.warning("监控任务未能在超时时间内停止")
+                monitor_task.cancel()
+            
+            status_task.cancel()
+            try:
+                await status_task
+            except asyncio.CancelledError:
+                pass
+            
+            self.logger.info("应用程序已安全关闭")
                 
         except ConfigError as e:
             if self.logger:
@@ -133,13 +146,124 @@ class QBittorrentMonitorApp:
         finally:
             await self.cleanup()
     
+    async def _setup_logging(self):
+        """设置日志优化器"""
+        try:
+            # 设置全局日志优化器
+            self.log_optimizer = setup_global_optimizer(
+                log_dir="logs",
+                max_file_size=10 * 1024 * 1024,  # 10MB
+                backup_count=5,
+                json_format=False,
+                async_logging=True
+            )
+            
+            # 获取优化的日志记录器
+            self.logger = get_optimized_logger('QBittorrentMonitorApp')
+            
+            # 设置日志级别
+            self.logger.setLevel(getattr(logging, self.config.log_level.upper()))
+            
+        except Exception as e:
+            # 如果优化器设置失败，使用标准日志
+            try:
+                self.logger = setup_logging(
+                    level=self.config.log_level,
+                    log_file=self.config.log_file
+                )
+            except Exception:
+                # 如果setup_logging也失败，使用基本日志配置
+                logging.basicConfig(
+                    level=getattr(logging, self.config.log_level.upper(), logging.INFO),
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                )
+                self.logger = logging.getLogger('QBittorrentMonitorApp')
+            
+            self.logger.warning(f"日志优化器设置失败，使用标准日志: {str(e)}")
+    
+    async def _setup_performance_monitoring(self):
+        """设置性能监控"""
+        try:
+            # 设置全局性能监控器
+            self.performance_monitor = await setup_global_monitor(
+                collection_interval=1.0,
+                auto_cleanup_hours=24,
+                report_file="logs/performance_report.json"
+            )
+            
+            # 添加应用程序特定的性能指标收集器
+            self._setup_custom_performance_collectors()
+            
+            self.logger.info("性能监控已启用")
+            
+        except Exception as e:
+            self.logger.warning(f"性能监控设置失败: {str(e)}")
+    
     async def cleanup(self):
-        """清理资源"""
-        if self.config_manager:
-            self.config_manager.stop_file_watcher()
-        
-        if self.logger:
-            self.logger.info("资源清理完成")
+        """清理所有资源"""
+        try:
+            if self.logger:
+                self.logger.info("开始清理应用程序资源...")
+            
+            # 清理剪贴板监控器
+            if hasattr(self, 'clipboard_monitor') and hasattr(self.clipboard_monitor, 'cleanup'):
+                await self.clipboard_monitor.cleanup()
+                if self.logger:
+                    self.logger.debug("剪贴板监控器已清理")
+            
+            # 清理qBittorrent客户端
+            if hasattr(self, 'qbt_client'):
+                if self.logger:
+                    self.logger.info("🔍 [诊断] 主程序开始清理QBittorrent客户端...")
+                # 只调用__aexit__来正确关闭异步上下文管理器（它会内部调用cleanup）
+                if hasattr(self.qbt_client, '__aexit__'):
+                    await self.qbt_client.__aexit__(None, None, None)
+                    if self.logger:
+                        self.logger.info("✅ [诊断] 主程序QBittorrent客户端清理完成")
+                # 不要重复调用cleanup，因为__aexit__已经调用了
+            
+            # 清理配置管理器
+            if hasattr(self, 'config_manager'):
+                if hasattr(self.config_manager, 'cleanup'):
+                    await self.config_manager.cleanup()
+                elif hasattr(self.config_manager, 'stop_file_watcher'):
+                    self.config_manager.stop_file_watcher()
+                if self.logger:
+                    self.logger.debug("配置管理器已清理")
+            
+            # 清理性能监控器
+            if self.performance_monitor:
+                try:
+                    await cleanup_global_monitor()
+                    if self.logger:
+                        self.logger.debug("性能监控器已清理")
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"清理性能监控器时出错: {str(e)}")
+            
+            # 清理日志优化器
+            try:
+                cleanup_global_optimizer()
+                if self.logger:
+                    self.logger.debug("日志优化器已清理")
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"清理日志优化器时出错: {str(e)}")
+            
+            if self.logger:
+                self.logger.info("应用程序资源清理完成")
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"清理过程中出错: {str(e)}")
+    
+    def _setup_custom_performance_collectors(self):
+        """设置自定义性能收集器"""
+        if self.performance_monitor:
+            # 添加应用程序特定的性能指标
+            self.performance_monitor.add_custom_metric('clipboard_checks', 0)
+            self.performance_monitor.add_custom_metric('torrents_added', 0)
+            self.performance_monitor.add_custom_metric('ai_classifications', 0)
     
     def _setup_signal_handlers(self):
         """设置信号处理器"""
@@ -286,4 +410,4 @@ def create_config():
 
 
 if __name__ == "__main__":
-    cli() 
+    cli()

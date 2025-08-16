@@ -9,9 +9,13 @@ import logging
 import random
 import re
 import urllib.parse
-from typing import List, Dict, Optional, Set, Any
-from dataclasses import dataclass
-from datetime import datetime
+import time
+import hashlib
+from collections import defaultdict, deque
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Optional, Set, Any, Tuple
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from crawl4ai import AsyncWebCrawler, LLMConfig
@@ -35,6 +39,26 @@ class TorrentInfo:
     leechers: int = 0
     category: str = ""
     status: str = "pending"  # pending, extracted, added, failed, duplicate
+    
+@dataclass
+class CrawlerStats:
+    """爬虫性能统计"""
+    requests_made: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    errors: int = 0
+    response_times: deque = field(default_factory=lambda: deque(maxlen=100))
+    circuit_breaker_trips: int = 0
+    rate_limit_hits: int = 0
+    
+    def get_avg_response_time(self) -> float:
+        """获取平均响应时间"""
+        return sum(self.response_times) / len(self.response_times) if self.response_times else 0.0
+    
+    def get_cache_hit_rate(self) -> float:
+        """获取缓存命中率"""
+        total = self.cache_hits + self.cache_misses
+        return self.cache_hits / total if total > 0 else 0.0
 
 
 class WebCrawler:
@@ -49,7 +73,38 @@ class WebCrawler:
         self.ai_classifier = AIClassifier(config.deepseek)
         self.notification_manager = NotificationManager(config.notifications.model_dump())
         
-        # 统计信息
+        # 连接池配置
+        self._connection_pool_size = getattr(config.web_crawler, 'connection_pool_size', 5)
+        self._crawler_pool: List[AsyncWebCrawler] = []
+        self._pool_semaphore = asyncio.Semaphore(self._connection_pool_size)
+        
+        # 缓存系统
+        self._cache: Dict[str, Tuple[Any, datetime]] = {}
+        self._cache_max_size = getattr(config.web_crawler, 'cache_max_size', 1000)
+        self._cache_ttl = getattr(config.web_crawler, 'cache_ttl_seconds', 3600)  # 1小时
+        
+        # 性能监控
+        self._performance_stats = CrawlerStats()
+        
+        # 断路器配置
+        self._circuit_breaker_threshold = getattr(config.web_crawler, 'circuit_breaker_threshold', 5)
+        self._circuit_breaker_recovery_timeout = getattr(config.web_crawler, 'circuit_breaker_recovery_seconds', 300)  # 5分钟
+        self._circuit_breaker_failures = 0
+        self._circuit_breaker_last_failure = None
+        self._circuit_breaker_state = 'closed'  # closed, open, half-open
+        
+        # 速率限制
+        self._rate_limit_requests = getattr(config.web_crawler, 'max_requests_per_minute', 60)
+        self._rate_limit_window = deque(maxlen=self._rate_limit_requests)
+        
+        # 线程池执行器
+        self._thread_pool = ThreadPoolExecutor(max_workers=4)
+        
+        # 清理状态标志
+        self._is_cleaned_up = False
+        self._cleanup_lock = asyncio.Lock()
+        
+        # 统计信息（保持向后兼容）
         self.stats = {
             'pages_crawled': 0,
             'torrents_found': 0,
@@ -61,6 +116,263 @@ class WebCrawler:
         
         self.processed_hashes: Set[str] = set()
     
+    async def _get_crawler_from_pool(self) -> AsyncWebCrawler:
+        """从连接池获取爬虫实例"""
+        async with self._pool_semaphore:
+            if self._crawler_pool:
+                return self._crawler_pool.pop()
+            
+            # 创建新的爬虫实例
+            crawler = AsyncWebCrawler(
+                headless=True,
+                browser_type="chromium",
+                verbose=False,
+                delay_before_return_html=2.0,
+                js_code=[
+                    "window.scrollTo(0, document.body.scrollHeight);",
+                    "await new Promise(resolve => setTimeout(resolve, 1000));"
+                ]
+            )
+            await crawler.start()
+            return crawler
+    
+    async def _return_crawler_to_pool(self, crawler: AsyncWebCrawler):
+        """将爬虫实例返回连接池"""
+        if len(self._crawler_pool) < self._connection_pool_size:
+            self._crawler_pool.append(crawler)
+        else:
+            await crawler.close()
+    
+    def _get_cache_key(self, url: str, **kwargs) -> str:
+        """生成缓存键"""
+        key_data = f"{url}:{str(sorted(kwargs.items()))}"
+        return hashlib.md5(key_data.encode()).hexdigest()
+    
+    def _get_from_cache(self, cache_key: str) -> Optional[Any]:
+        """从缓存获取数据"""
+        if cache_key in self._cache:
+            data, timestamp = self._cache[cache_key]
+            if datetime.now() - timestamp < timedelta(seconds=self._cache_ttl):
+                self._performance_stats.cache_hits += 1
+                return data
+            else:
+                # 缓存过期，删除
+                del self._cache[cache_key]
+        
+        self._performance_stats.cache_misses += 1
+        return None
+    
+    def _put_to_cache(self, cache_key: str, data: Any):
+        """将数据放入缓存"""
+        # 如果缓存已满，删除最旧的条目
+        if len(self._cache) >= self._cache_max_size:
+            oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k][1])
+            del self._cache[oldest_key]
+        
+        self._cache[cache_key] = (data, datetime.now())
+    
+    def _cleanup_cache(self):
+        """清理过期的缓存条目"""
+        now = datetime.now()
+        expired_keys = [
+            key for key, (_, timestamp) in self._cache.items()
+            if now - timestamp >= timedelta(seconds=self._cache_ttl)
+        ]
+        for key in expired_keys:
+            del self._cache[key]
+    
+    def _check_rate_limit(self) -> bool:
+        """检查是否超过速率限制"""
+        now = time.time()
+        # 清理超过1分钟的请求记录
+        while self._rate_limit_window and now - self._rate_limit_window[0] > 60:
+            self._rate_limit_window.popleft()
+        
+        if len(self._rate_limit_window) >= self._rate_limit_requests:
+            self._performance_stats.rate_limit_hits += 1
+            return False
+        
+        self._rate_limit_window.append(now)
+        return True
+    
+    def _check_circuit_breaker(self) -> bool:
+        """检查断路器状态"""
+        if self._circuit_breaker_state == 'closed':
+            return True
+        elif self._circuit_breaker_state == 'open':
+            if (self._circuit_breaker_last_failure and 
+                time.time() - self._circuit_breaker_last_failure > self._circuit_breaker_recovery_timeout):
+                self._circuit_breaker_state = 'half-open'
+                return True
+            return False
+        else:  # half-open
+            return True
+    
+    def _record_success(self):
+        """记录成功请求"""
+        if self._circuit_breaker_state == 'half-open':
+            self._circuit_breaker_state = 'closed'
+            self._circuit_breaker_failures = 0
+    
+    def _record_failure(self):
+        """记录失败请求"""
+        self._circuit_breaker_failures += 1
+        self._circuit_breaker_last_failure = time.time()
+        
+        if self._circuit_breaker_failures >= self._circuit_breaker_threshold:
+            self._circuit_breaker_state = 'open'
+            self._performance_stats.circuit_breaker_trips += 1
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """获取性能统计信息"""
+        return {
+            'requests_made': self._performance_stats.requests_made,
+            'cache_hits': self._performance_stats.cache_hits,
+            'cache_misses': self._performance_stats.cache_misses,
+            'cache_hit_rate': self._performance_stats.get_cache_hit_rate(),
+            'avg_response_time': self._performance_stats.get_avg_response_time(),
+            'errors': self._performance_stats.errors,
+            'circuit_breaker_trips': self._performance_stats.circuit_breaker_trips,
+            'circuit_breaker_state': self._circuit_breaker_state,
+            'rate_limit_hits': self._performance_stats.rate_limit_hits,
+            'cache_size': len(self._cache),
+            'pool_size': len(self._crawler_pool)
+        }
+    
+    async def cleanup(self):
+        """清理所有资源"""
+        async with self._cleanup_lock:
+            if self._is_cleaned_up:
+                return
+            
+            self.logger.info("开始清理WebCrawler资源...")
+            
+            try:
+                # 关闭连接池中的所有爬虫
+                while self._crawler_pool:
+                    crawler = self._crawler_pool.pop()
+                    try:
+                        await crawler.close()
+                    except Exception as e:
+                        self.logger.warning(f"关闭爬虫实例时出错: {e}")
+                self.logger.debug("爬虫连接池已清理")
+                
+                # 清理缓存
+                if hasattr(self, '_cache'):
+                    self._cache.clear()
+                    self.logger.debug("缓存已清理")
+                
+                # 关闭线程池执行器
+                if hasattr(self, '_thread_pool') and self._thread_pool:
+                    self._thread_pool.shutdown(wait=True)
+                    self.logger.debug("线程池已关闭")
+                
+                # 清理AI分类器
+                if hasattr(self, 'ai_classifier') and hasattr(self.ai_classifier, 'cleanup'):
+                    await self.ai_classifier.cleanup()
+                    self.logger.debug("AI分类器已清理")
+                
+                self._is_cleaned_up = True
+                self.logger.info("WebCrawler资源清理完成")
+                
+            except Exception as e:
+                self.logger.error(f"清理WebCrawler资源时出错: {str(e)}")
+    
+    def __del__(self):
+        """析构函数，确保资源被清理"""
+        if not self._is_cleaned_up:
+            try:
+                # 同步清理关键资源
+                if hasattr(self, '_cache'):
+                    self._cache.clear()
+                    
+                if hasattr(self, '_thread_pool') and self._thread_pool:
+                    self._thread_pool.shutdown(wait=False)
+                    
+                # 强制关闭爬虫实例（同步方式）
+                if hasattr(self, '_crawler_pool'):
+                    while self._crawler_pool:
+                        try:
+                            crawler = self._crawler_pool.pop()
+                            # 强制关闭爬虫实例
+                            if hasattr(crawler, '_browser_manager') and crawler._browser_manager:
+                                try:
+                                    # 尝试同步关闭浏览器
+                                    if hasattr(crawler._browser_manager, '_browser'):
+                                        browser = crawler._browser_manager._browser
+                                        if browser and hasattr(browser, 'close'):
+                                            # 这里无法使用await，但至少尝试触发关闭
+                                            pass
+                                except Exception:
+                                    pass
+                        except Exception:
+                            break
+                        
+            except Exception:
+                pass  # 忽略析构时的异常
+    
+    async def _make_request_with_cache(self, url: str, **kwargs) -> Optional[Any]:
+        """带缓存的HTTP请求方法"""
+        # 检查速率限制
+        if not self._check_rate_limit():
+            await asyncio.sleep(1)  # 等待1秒后重试
+            if not self._check_rate_limit():
+                raise CrawlerError(f"Rate limit exceeded for {url}")
+        
+        # 检查断路器
+        if not self._check_circuit_breaker():
+            raise CrawlerError(f"Circuit breaker is open for {url}")
+        
+        # 生成缓存键
+        cache_key = self._get_cache_key(url, **kwargs)
+        
+        # 尝试从缓存获取
+        cached_result = self._get_from_cache(cache_key)
+        if cached_result is not None:
+            return cached_result
+        
+        # 清理过期缓存
+        self._cleanup_cache()
+        
+        start_time = time.time()
+        crawler = None
+        
+        try:
+            # 从连接池获取爬虫
+            crawler = await self._get_crawler_from_pool()
+            
+            # 执行请求
+            result = await crawler.arun(
+                url=url,
+                **kwargs
+            )
+            
+            # 记录性能指标
+            response_time = time.time() - start_time
+            self._performance_stats.requests_made += 1
+            self._performance_stats.response_times.append(response_time)
+            
+            # 记录成功
+            self._record_success()
+            
+            # 缓存结果
+            self._put_to_cache(cache_key, result)
+            
+            return result
+            
+        except Exception as e:
+            # 记录失败
+            self._record_failure()
+            self._performance_stats.errors += 1
+            
+            self.logger.error(f"Request failed for {url}: {str(e)}")
+            raise CrawlerError(f"Failed to crawl {url}: {str(e)}") from e
+            
+        finally:
+            # 返回爬虫到连接池
+            if crawler:
+                await self._return_crawler_to_pool(crawler)
+     
     async def crawl_xxxclub_search(self, search_url: str, max_pages: int = 1) -> List[TorrentInfo]:
         """
         抓取XXXClub搜索页面
@@ -112,8 +424,7 @@ class WebCrawler:
         }
         
         try:
-            async with AsyncWebCrawler(**crawler_config) as crawler:
-                for page in range(1, max_pages + 1):
+            for page in range(1, max_pages + 1):
                     # 构建分页URL
                     if page > 1:
                         if '?' in search_url:
@@ -146,8 +457,8 @@ class WebCrawler:
                                 current_config['wait_for'] = min(current_config['wait_for'] * 2, 15)
                                 current_config['delay_before_return_html'] = min(current_config['delay_before_return_html'] * 2, 8)
                             
-                            # 使用 crawl4ai 抓取页面
-                            result = await crawler.arun(
+                            # 使用缓存请求方法抓取页面
+                            result = await self._make_request_with_cache(
                                 url=page_url,
                                 wait_for=current_config['wait_for'],
                                 js_code=None if attempt < 2 else "window.scrollTo(0, document.body.scrollHeight);",  # 第三次重试后模拟滚动
@@ -438,11 +749,10 @@ class WebCrawler:
             }
         }
 
-        async with AsyncWebCrawler(**crawler_config) as crawler:
-            max_retries = self.config.web_crawler.max_retries
-            base_delay = self.config.web_crawler.base_delay
+        max_retries = self.config.web_crawler.max_retries
+        base_delay = self.config.web_crawler.base_delay
 
-            for attempt in range(max_retries):
+        for attempt in range(max_retries):
                 try:
                     if attempt > 0:
                         # 指数退避 + 随机抖动，限制最大延迟
@@ -457,8 +767,8 @@ class WebCrawler:
                         current_config['wait_for'] = min(current_config['wait_for'] * 2, 15)
                         current_config['delay_before_return_html'] = min(current_config['delay_before_return_html'] * 2, 8)
 
-                    # 使用智能爬虫设置
-                    result = await crawler.arun(
+                    # 使用缓存请求方法
+                    result = await self._make_request_with_cache(
                         url=torrent.detail_url,
                         wait_for=current_config['wait_for'],
                         page_timeout=current_config['page_timeout'],
@@ -554,8 +864,7 @@ class WebCrawler:
             }
         }
         
-        async with AsyncWebCrawler(**crawler_config) as crawler:
-            for i, torrent in enumerate(torrents, 1):
+        for i, torrent in enumerate(torrents, 1):
                 max_retries = self.config.web_crawler.max_retries
                 base_delay = self.config.web_crawler.base_delay
                 last_error = None
@@ -578,8 +887,8 @@ class WebCrawler:
                             current_config['wait_for'] = min(current_config['wait_for'] * 2, 15)
                             current_config['delay_before_return_html'] = min(current_config['delay_before_return_html'] * 2, 8)
                         
-                        # 使用智能爬虫设置
-                        result = await crawler.arun(
+                        # 使用缓存请求方法
+                        result = await self._make_request_with_cache(
                             url=torrent.detail_url,
                             wait_for=current_config['wait_for'],
                             page_timeout=current_config['page_timeout'],
@@ -1021,4 +1330,7 @@ async def crawl_and_add_torrents(search_url: str, config: AppConfig,
             'message': f'处理失败: {str(e)}',
             'error_type': 'unexpected_error',
             'stats': crawler.get_stats()
-        } 
+        }
+    finally:
+        # 确保清理WebCrawler资源
+        await crawler.cleanup()
