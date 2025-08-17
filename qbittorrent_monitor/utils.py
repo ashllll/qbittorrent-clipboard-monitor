@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Optional, Tuple, Dict, Any, List
 import asyncio
 
+# 导入TorrentInfo类型
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .web_crawler import TorrentInfo
+
 try:
     from colorama import init, Fore, Back, Style
     init(autoreset=True)  # 自动重置颜色
@@ -425,7 +430,7 @@ class SimpleNotificationManager:
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-    async def _notify_completion(self, torrents: List[TorrentInfo]):
+    async def _notify_completion(self, torrents: List["TorrentInfo"]):
         """通知批量处理完成"""
         added_count = len([t for t in torrents if t.status == "added"])
         failed_count = len([t for t in torrents if t.status == "failed"])
@@ -495,4 +500,4 @@ def get_config_path() -> Path:
             return config_path
     
     # 默认返回JSON配置文件路径
-    return script_dir / 'config.json' 
+    return script_dir / 'config.json'

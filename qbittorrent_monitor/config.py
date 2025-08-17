@@ -12,12 +12,119 @@ import json
 import os
 import logging
 import threading
+import time
+import hashlib
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Union
-from pydantic import BaseModel, ValidationError, Field
+from typing import Dict, List, Optional, Any, Union, Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from pydantic import BaseModel, ValidationError, Field, validator
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import asyncio
+from collections import defaultdict
+
+
+@dataclass
+class ConfigStats:
+    """配置管理统计信息"""
+    load_count: int = 0
+    reload_count: int = 0
+    validation_errors: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    last_load_time: Optional[datetime] = None
+    last_reload_time: Optional[datetime] = None
+    average_load_time: float = 0.0
+    load_times: List[float] = field(default_factory=list)
+    
+    def record_load_time(self, load_time: float):
+        """记录加载时间"""
+        self.load_times.append(load_time)
+        if len(self.load_times) > 100:  # 只保留最近100次记录
+            self.load_times.pop(0)
+        self.average_load_time = sum(self.load_times) / len(self.load_times)
+    
+    def get_cache_hit_rate(self) -> float:
+        """获取缓存命中率"""
+        total = self.cache_hits + self.cache_misses
+        return self.cache_hits / total if total > 0 else 0.0
+
+
+@dataclass
+class ConfigCacheEntry:
+    """配置缓存条目"""
+    data: Dict[str, Any]
+    hash_value: str
+    timestamp: datetime
+    access_count: int = 0
+    last_access: Optional[datetime] = None
+    
+    def is_expired(self, ttl_seconds: int = 300) -> bool:
+        """检查缓存是否过期（默认5分钟）"""
+        return (datetime.now() - self.timestamp).total_seconds() > ttl_seconds
+    
+    def touch(self):
+        """更新访问时间和计数"""
+        self.access_count += 1
+        self.last_access = datetime.now()
+
+
+class ConfigTemplate:
+    """配置模板系统"""
+    
+    @staticmethod
+    def get_development_template() -> Dict[str, Any]:
+        """开发环境配置模板"""
+        return {
+            "log_level": "DEBUG",
+            "hot_reload": True,
+            "qbittorrent": {
+                "host": "localhost",
+                "port": 8080,
+                "verify_ssl": False
+            },
+            "web_crawler": {
+                "max_retries": 1,
+                "page_timeout": 30000,
+                "max_concurrent_extractions": 1
+            }
+        }
+    
+    @staticmethod
+    def get_production_template() -> Dict[str, Any]:
+        """生产环境配置模板"""
+        return {
+            "log_level": "INFO",
+            "hot_reload": False,
+            "qbittorrent": {
+                "verify_ssl": True,
+                "use_https": True
+            },
+            "web_crawler": {
+                "max_retries": 5,
+                "page_timeout": 60000,
+                "max_concurrent_extractions": 5
+            },
+            "notifications": {
+                "enabled": True
+            }
+        }
+    
+    @staticmethod
+    def get_testing_template() -> Dict[str, Any]:
+        """测试环境配置模板"""
+        return {
+            "log_level": "WARNING",
+            "hot_reload": False,
+            "check_interval": 0.1,
+            "web_crawler": {
+                "enabled": False
+            },
+            "notifications": {
+                "enabled": False
+            }
+        }
 
 
 class CategoryConfig(BaseModel):
@@ -29,6 +136,31 @@ class CategoryConfig(BaseModel):
     # 增强规则配置
     rules: Optional[List[Dict[str, Any]]] = None
     priority: int = 0  # 分类优先级
+    
+    @validator('save_path')
+    def validate_save_path(cls, v):
+        """验证保存路径"""
+        if not v or not v.strip():
+            raise ValueError('保存路径不能为空')
+        # 确保路径以/结尾
+        if not v.endswith('/'):
+            v = v + '/'
+        return v
+    
+    @validator('priority')
+    def validate_priority(cls, v):
+        """验证优先级"""
+        if v < 0 or v > 100:
+            raise ValueError('优先级必须在0-100之间')
+        return v
+    
+    @validator('keywords')
+    def validate_keywords(cls, v):
+        """验证关键词"""
+        if v:
+            # 去除空字符串和重复项
+            v = list(set(k.strip() for k in v if k.strip()))
+        return v
     
     class Config:
         validate_by_name = True
@@ -52,6 +184,34 @@ class QBittorrentConfig(BaseModel):
     # 移到这里的路径配置
     use_nas_paths_directly: bool = False
     path_mapping: List[PathMappingRule] = []
+    
+    @validator('host')
+    def validate_host(cls, v):
+        """验证主机地址"""
+        if not v or not v.strip():
+            raise ValueError('主机地址不能为空')
+        return v.strip()
+    
+    @validator('port')
+    def validate_port(cls, v):
+        """验证端口号"""
+        if not (1 <= v <= 65535):
+            raise ValueError('端口号必须在1-65535之间')
+        return v
+    
+    @validator('username')
+    def validate_username(cls, v):
+        """验证用户名"""
+        if not v or not v.strip():
+            raise ValueError('用户名不能为空')
+        return v.strip()
+    
+    @validator('password')
+    def validate_password(cls, v):
+        """验证密码"""
+        if not v:
+            raise ValueError('密码不能为空')
+        return v
 
 
 class DeepSeekConfig(BaseModel):
@@ -86,6 +246,36 @@ class DeepSeekConfig(BaseModel):
 7. 如果无法确定分类或不属于任何明确分类，返回'other'。
 
 请只返回最合适的分类名称（例如：tv, movies, adult, anime, music, games, software, other），不要包含任何其他解释或文字。"""
+    
+    @validator('base_url')
+    def validate_base_url(cls, v):
+        """验证API基础URL"""
+        if not v or not v.strip():
+            raise ValueError('API基础URL不能为空')
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError('API基础URL必须以http://或https://开头')
+        return v.strip().rstrip('/')
+    
+    @validator('timeout')
+    def validate_timeout(cls, v):
+        """验证超时时间"""
+        if v <= 0 or v > 300:
+            raise ValueError('超时时间必须在1-300秒之间')
+        return v
+    
+    @validator('max_retries')
+    def validate_max_retries(cls, v):
+        """验证最大重试次数"""
+        if v < 0 or v > 10:
+            raise ValueError('最大重试次数必须在0-10之间')
+        return v
+    
+    @validator('retry_delay')
+    def validate_retry_delay(cls, v):
+        """验证重试延迟"""
+        if v < 0 or v > 60:
+            raise ValueError('重试延迟必须在0-60秒之间')
+        return v
 
 
 class ConsoleNotificationConfig(BaseModel):
@@ -115,6 +305,69 @@ class WebCrawlerConfig(BaseModel):
     add_torrents_paused: bool = False
     # 代理配置
     proxy: Optional[str] = None
+    
+    @validator('page_timeout')
+    def validate_page_timeout(cls, v):
+        """验证页面超时时间"""
+        if v <= 0 or v > 300000:  # 最大5分钟
+            raise ValueError('页面超时时间必须在1-300000毫秒之间')
+        return v
+    
+    @validator('wait_for')
+    def validate_wait_for(cls, v):
+        """验证页面加载等待时间"""
+        if v < 0 or v > 60:
+            raise ValueError('页面加载等待时间必须在0-60秒之间')
+        return v
+    
+    @validator('delay_before_return')
+    def validate_delay_before_return(cls, v):
+        """验证返回前等待时间"""
+        if v < 0 or v > 30:
+            raise ValueError('返回前等待时间必须在0-30秒之间')
+        return v
+    
+    @validator('max_retries')
+    def validate_max_retries(cls, v):
+        """验证最大重试次数"""
+        if v < 0 or v > 10:
+            raise ValueError('最大重试次数必须在0-10之间')
+        return v
+    
+    @validator('base_delay')
+    def validate_base_delay(cls, v):
+        """验证基础延迟时间"""
+        if v < 0 or v > 300:
+            raise ValueError('基础延迟时间必须在0-300秒之间')
+        return v
+    
+    @validator('max_delay')
+    def validate_max_delay(cls, v):
+        """验证最大延迟时间"""
+        if v < 0 or v > 600:
+            raise ValueError('最大延迟时间必须在0-600秒之间')
+        return v
+    
+    @validator('max_concurrent_extractions')
+    def validate_max_concurrent_extractions(cls, v):
+        """验证最大并发提取数"""
+        if v <= 0 or v > 20:
+            raise ValueError('最大并发提取数必须在1-20之间')
+        return v
+    
+    @validator('inter_request_delay')
+    def validate_inter_request_delay(cls, v):
+        """验证请求间延迟"""
+        if v < 0 or v > 60:
+            raise ValueError('请求间延迟必须在0-60秒之间')
+        return v
+    
+    @validator('proxy')
+    def validate_proxy(cls, v):
+        """验证代理配置"""
+        if v and not v.startswith(('http://', 'https://', 'socks4://', 'socks5://')):
+            raise ValueError('代理地址格式不正确，必须以http://、https://、socks4://或socks5://开头')
+        return v
 
 
 class NotificationConfig(BaseModel):
@@ -207,24 +460,74 @@ class ConfigManager:
         self.config: Optional[AppConfig] = None
         self.observer: Optional[Observer] = None
         self._reload_callbacks: List[callable] = []
+        
+        # 增强功能
+        self._stats = ConfigStats()
+        self._cache: Dict[str, ConfigCacheEntry] = {}
+        self._cache_lock = threading.Lock()
+        self._validation_cache: Dict[str, bool] = {}
+        self._template_cache: Dict[str, Dict[str, Any]] = {}
+        
+        # 配置选项
+        self.cache_ttl = 300  # 缓存TTL（秒）
+        self.enable_validation_cache = True
+        self.enable_performance_monitoring = True
     
     async def load_config(self) -> AppConfig:
-        """加载并验证配置文件"""
-        if not self.config_path.exists():
-            self._create_default_config()
+        """增强的配置加载方法"""
+        start_time = time.time()
         
         try:
+            # 检查缓存
+            if self.enable_performance_monitoring:
+                cache_key = self._get_cache_key()
+                cached_config = self._get_from_cache(cache_key)
+                if cached_config:
+                    self._stats.cache_hits += 1
+                    self.config = cached_config
+                    return self.config
+                else:
+                    self._stats.cache_misses += 1
+            
+            # 创建默认配置（如果不存在）
+            if not self.config_path.exists():
+                self._create_default_config()
+            
+            # 加载配置数据
             config_data = self._load_config_file()
             config_data = self._apply_env_overrides(config_data)
+            
+            # 验证配置
+            if self.enable_validation_cache:
+                validation_key = self._get_validation_key(config_data)
+                if validation_key not in self._validation_cache:
+                    self._validate_config_data(config_data)
+                    self._validation_cache[validation_key] = True
+            
+            # 创建配置对象
             self.config = AppConfig(**config_data)
+            
+            # 缓存配置
+            if self.enable_performance_monitoring:
+                self._put_to_cache(cache_key, self.config)
             
             # 启动热加载监控
             if self.config.hot_reload:
                 self._start_file_watcher()
-                
-            self.logger.info(f"配置加载成功: {self.config_path}")
+            
+            # 记录统计信息
+            load_time = time.time() - start_time
+            self._stats.load_count += 1
+            self._stats.last_load_time = datetime.now()
+            self._stats.record_load_time(load_time)
+            
+            self.logger.info(f"配置加载成功: {self.config_path} (耗时: {load_time:.3f}s)")
             return self.config
             
+        except ValidationError as e:
+            self._stats.validation_errors += 1
+            from .exceptions import ConfigError
+            raise ConfigError(f"配置验证失败: {str(e)}") from e
         except Exception as e:
             from .exceptions import ConfigError
             raise ConfigError(f"配置加载失败: {str(e)}") from e
@@ -286,10 +589,82 @@ class ConfigManager:
         self.observer.start()
         self.logger.info("配置文件热加载监控已启动")
     
+    def _get_cache_key(self) -> str:
+        """生成配置缓存键"""
+        try:
+            # 基于文件修改时间和路径生成缓存键
+            stat = self.config_path.stat()
+            content = f"{self.config_path}:{stat.st_mtime}:{stat.st_size}"
+            return hashlib.md5(content.encode()).hexdigest()
+        except Exception:
+            return f"fallback:{time.time()}"
+    
+    def _get_from_cache(self, cache_key: str) -> Optional[AppConfig]:
+        """从缓存获取配置"""
+        with self._cache_lock:
+            entry = self._cache.get(cache_key)
+            if entry and not entry.is_expired(self.cache_ttl):
+                entry.touch()
+                return entry.data
+            elif entry:
+                # 清理过期缓存
+                del self._cache[cache_key]
+        return None
+    
+    def _put_to_cache(self, cache_key: str, config: AppConfig):
+        """将配置放入缓存"""
+        with self._cache_lock:
+            # 限制缓存大小
+            if len(self._cache) >= 10:
+                # 删除最旧的缓存项
+                oldest_key = min(self._cache.keys(), 
+                               key=lambda k: self._cache[k].timestamp)
+                del self._cache[oldest_key]
+            
+            self._cache[cache_key] = ConfigCacheEntry(
+                data=config,
+                hash_value=cache_key,
+                timestamp=datetime.now()
+            )
+    
+    def _get_validation_key(self, config_data: Dict[str, Any]) -> str:
+        """生成配置验证键"""
+        content = json.dumps(config_data, sort_keys=True, ensure_ascii=False)
+        return hashlib.md5(content.encode()).hexdigest()
+    
+    def _validate_config_data(self, config_data: Dict[str, Any]):
+        """验证配置数据"""
+        # 基本结构验证
+        required_sections = ['qbittorrent', 'deepseek', 'categories']
+        for section in required_sections:
+            if section not in config_data:
+                raise ValueError(f"缺少必需的配置节: {section}")
+        
+        # 分类配置验证
+        categories = config_data.get('categories', {})
+        if not categories:
+            raise ValueError("至少需要配置一个分类")
+        
+        # 验证保存路径不重复
+        save_paths = []
+        for name, category in categories.items():
+            save_path = category.get('savePath') or category.get('save_path')
+            if save_path in save_paths:
+                raise ValueError(f"分类 {name} 的保存路径与其他分类重复: {save_path}")
+            save_paths.append(save_path)
+    
     async def reload_config(self):
-        """重新加载配置"""
+        """增强的配置重载方法"""
+        start_time = time.time()
+        
         try:
             old_config = self.config
+            
+            # 清理缓存以强制重新加载
+            with self._cache_lock:
+                self._cache.clear()
+            self._validation_cache.clear()
+            
             new_config = await self.load_config()
             
             # 通知所有注册的回调函数
@@ -302,7 +677,12 @@ class ConfigManager:
                 except Exception as e:
                     self.logger.error(f"配置重载回调执行失败: {str(e)}")
             
-            self.logger.info("配置重载完成")
+            # 记录统计信息
+            reload_time = time.time() - start_time
+            self._stats.reload_count += 1
+            self._stats.last_reload_time = datetime.now()
+            
+            self.logger.info(f"配置重载完成 (耗时: {reload_time:.3f}s)")
             
         except Exception as e:
             self.logger.error(f"配置重载失败: {str(e)}")
@@ -318,6 +698,82 @@ class ConfigManager:
             self.observer.join()
             self.observer = None
             self.logger.info("配置文件监控已停止")
+    
+    def get_stats(self) -> ConfigStats:
+        """获取配置管理统计信息"""
+        return self._stats
+    
+    def clear_cache(self):
+        """清理所有缓存"""
+        with self._cache_lock:
+            self._cache.clear()
+        self._validation_cache.clear()
+        self.logger.info("配置缓存已清理")
+    
+    def create_from_template(self, template_type: str = 'development') -> Dict[str, Any]:
+        """从模板创建配置"""
+        if template_type in self._template_cache:
+            return self._template_cache[template_type].copy()
+        
+        template_methods = {
+            'development': ConfigTemplate.get_development_template,
+            'production': ConfigTemplate.get_production_template,
+            'testing': ConfigTemplate.get_testing_template
+        }
+        
+        if template_type not in template_methods:
+            raise ValueError(f"未知的模板类型: {template_type}")
+        
+        template = template_methods[template_type]()
+        self._template_cache[template_type] = template
+        return template.copy()
+    
+    def validate_config_file(self, config_path: Optional[Path] = None) -> bool:
+        """验证配置文件"""
+        path = config_path or self.config_path
+        
+        try:
+            if not path.exists():
+                self.logger.error(f"配置文件不存在: {path}")
+                return False
+            
+            # 临时加载配置进行验证
+            temp_manager = ConfigManager(path)
+            config_data = temp_manager._load_config_file()
+            config_data = temp_manager._apply_env_overrides(config_data)
+            temp_manager._validate_config_data(config_data)
+            
+            # 尝试创建配置对象
+            AppConfig(**config_data)
+            
+            self.logger.info(f"配置文件验证通过: {path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"配置文件验证失败: {path}, 错误: {str(e)}")
+            return False
+    
+    def backup_config(self, backup_path: Optional[Path] = None) -> Path:
+        """备份当前配置文件"""
+        if backup_path is None:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_path = self.config_path.parent / f"{self.config_path.stem}_backup_{timestamp}{self.config_path.suffix}"
+        
+        try:
+            import shutil
+            shutil.copy2(self.config_path, backup_path)
+            self.logger.info(f"配置文件已备份到: {backup_path}")
+            return backup_path
+        except Exception as e:
+            self.logger.error(f"配置文件备份失败: {str(e)}")
+            raise
+    
+    def cleanup(self):
+        """清理资源"""
+        self.stop_file_watcher()
+        self.clear_cache()
+        self._reload_callbacks.clear()
+        self.logger.info("ConfigManager资源已清理")
     
     def _create_default_config(self):
         """创建默认配置文件"""
@@ -457,4 +913,4 @@ class ConfigManager:
             self.logger.info(f"已创建默认配置文件: {self.config_path}")
         except Exception as e:
             from .exceptions import ConfigError
-            raise ConfigError(f"创建默认配置失败: {str(e)}") from e 
+            raise ConfigError(f"创建默认配置失败: {str(e)}") from e
