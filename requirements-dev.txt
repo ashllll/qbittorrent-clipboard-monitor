@@ -1,0 +1,36 @@
+# 开发依赖
+
+# 测试框架
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-mock==3.14.0
+pytest-cov==6.0.0
+pytest-xdist==3.6.1
+pytest-benchmark==4.0.0
+
+# 代码质量
+black==24.11.0
+flake8==7.1.1
+mypy==1.13.0
+isort==5.13.2
+pre-commit==4.0.1
+
+# 安全检查
+bandit==1.7.6
+safety==3.2.11
+
+# 文档生成
+sphinx==8.1.3
+sphinx-rtd-theme==3.0.2
+sphinx-autodoc-typehints==2.5.0
+
+# 开发工具
+ipython==8.20.0
+jupyter==1.1.1
+
+# 性能分析
+memory-profiler==0.61.0
+line-profiler==4.1.3
+
+# 依赖分析
+pipdeptree==2.23.4

@@ -1,0 +1,220 @@
+{
+    "project_info": {
+        "name": "qbittorrent-clipboard-monitor",
+        "summary": "qBittorrent 剪贴板监控与自动分类下载器",
+        "version": "2.1.0",
+        "scan_timestamp": "2025-10-22T22:04:36+08:00",
+        "language": "python",
+        "framework": "asyncio, aiohttp, pydantic"
+    },
+    "scan_coverage": {
+        "total_files_estimated": 75,
+        "files_scanned": 25,
+        "coverage_percentage": 33.3,
+        "directories_scanned": [
+            "qbittorrent_monitor/",
+            "docs/",
+            "libs/"
+        ],
+        "ignored_patterns": [
+            "node_modules/**",
+            ".git/**",
+            ".github/**",
+            "dist/**",
+            "build/**",
+            ".next/**",
+            "__pycache__/**",
+            "*.lock",
+            "*.log",
+            "*.bin",
+            "*.pdf",
+            "*.png",
+            "*.jpg",
+            "*.jpeg",
+            "*.gif",
+            "*.mp4",
+            "*.zip",
+            "*.tar",
+            "*.gz",
+            "libs/**/*.whl"
+        ]
+    },
+    "modules": [
+        {
+            "path": "qbittorrent_monitor",
+            "type": "core_package",
+            "entry_point": "qbittorrent_monitor/__init__.py",
+            "description": "核心业务逻辑包",
+            "files": [
+                "qbittorrent_monitor/__init__.py",
+                "qbittorrent_monitor/config.py",
+                "qbittorrent_monitor/main.py",
+                "qbittorrent_monitor/clipboard_monitor.py",
+                "qbittorrent_monitor/qbittorrent_client.py",
+                "qbittorrent_monitor/ai_classifier.py",
+                "qbittorrent_monitor/web_crawler.py",
+                "qbittorrent_monitor/utils.py",
+                "qbittorrent_monitor/exceptions.py",
+                "qbittorrent_monitor/performance_monitor.py",
+                "qbittorrent_monitor/log_optimizer.py"
+            ],
+            "interfaces": [
+                "ConfigManager",
+                "ClipboardMonitor",
+                "QBittorrentClient",
+                "AIClassifier",
+                "WebCrawler"
+            ],
+            "config_files": [
+                "qbittorrent_monitor/config.json"
+            ],
+            "test_files": [],
+            "dependencies": [
+                "aiohttp",
+                "pydantic",
+                "pyperclip",
+                "openai",
+                "crawl4ai",
+                "tenacity",
+                "watchdog"
+            ],
+            "coverage": {
+                "files_analyzed": 11,
+                "interfaces_identified": 5,
+                "test_coverage": 0,
+                "gaps": [
+                    "单元测试缺失",
+                    "集成测试缺失",
+                    "性能测试缺失"
+                ]
+            }
+        },
+        {
+            "path": "start.py",
+            "type": "application_entry",
+            "entry_point": "start.py",
+            "description": "应用程序启动入口，依赖检查和初始化",
+            "files": ["start.py"],
+            "interfaces": ["QBittorrentDownloadHelper"],
+            "config_files": [],
+            "test_files": [],
+            "dependencies": ["qbittorrent_monitor"],
+            "coverage": {
+                "files_analyzed": 1,
+                "interfaces_identified": 1,
+                "test_coverage": 0,
+                "gaps": ["缺少启动脚本测试"]
+            }
+        },
+        {
+            "path": "docs",
+            "type": "documentation",
+            "entry_point": "docs/",
+            "description": "项目文档和指南",
+            "files": [
+                "docs/architecture/提示词.md",
+                "docs/architecture/qbittorrent-clipboard-monitor 优化计划.md",
+                "docs/architecture/qBittorrent 剪贴板监控与自动分类下载器项目分析报告.md",
+                "docs/architecture/项目模块优化改进建议.md",
+                "docs/guides/INSTALL.md",
+                "docs/guides/FINAL_OPTIMIZATION_REPORT.md",
+                "docs/guides/CHANGELOG.md",
+                "docs/guides/STARTUP_GUIDE.md",
+                "docs/guides/OPTIMIZATION_SUMMARY.md",
+                "docs/guides/README.md",
+                "docs/guides/网页爬虫优化说明.md"
+            ],
+            "interfaces": [],
+            "config_files": [],
+            "test_files": [],
+            "dependencies": [],
+            "coverage": {
+                "files_analyzed": 11,
+                "interfaces_identified": 0,
+                "test_coverage": 0,
+                "gaps": ["文档结构良好，无发现明显缺失"]
+            }
+        },
+        {
+            "path": "pyproject.toml",
+            "type": "project_config",
+            "entry_point": "pyproject.toml",
+            "description": "Python 项目配置文件",
+            "files": ["pyproject.toml"],
+            "interfaces": [],
+            "config_files": ["pyproject.toml"],
+            "test_files": [],
+            "dependencies": ["poetry-core"],
+            "coverage": {
+                "files_analyzed": 1,
+                "interfaces_identified": 0,
+                "test_coverage": 0,
+                "gaps": []
+            }
+        }
+    ],
+    "architecture": {
+        "pattern": "asynchronous_event_driven",
+        "main_components": [
+            "ClipboardMonitor - 剪贴板监控",
+            "AIClassifier - AI智能分类",
+            "QBittorrentClient - qBittorrent API客户端",
+            "WebCrawler - 网页爬虫",
+            "ConfigManager - 配置管理"
+        ],
+        "data_flow": [
+            "剪贴板监控 → 内容检测 → AI分类 → qBittorrent下载",
+            "网页URL → 网页爬虫 → 批量种子获取 → AI分类 → qBittorrent下载"
+        ],
+        "key_patterns": [
+            "异步I/O",
+            "配置热加载",
+            "AI驱动的分类",
+            "网页爬虫集成",
+            "错误恢复机制",
+            "性能监控"
+        ]
+    },
+    "gaps_and_recommendations": {
+        "critical_gaps": [
+            "完全缺少测试文件 - 需要建立完整的测试套件",
+            "性能监控模块需要详细分析",
+            "日志优化器模块需要深入研究",
+            "异常处理机制需要验证"
+        ],
+        "high_priority_modules": [
+            "qbittorrent_monitor/clipboard_monitor.py - 需要测试和性能分析",
+            "qbittorrent_monitor/ai_classifier.py - 需要Mock测试和API集成测试",
+            "qbittorrent_monitor/qbittorrent_client.py - 需要API客户端测试",
+            "qbittorrent_monitor/web_crawler.py - 需要爬虫逻辑测试"
+        ],
+        "next_scan_suggestions": [
+            "重点分析性能监控和日志优化模块",
+            "检查是否有隐藏的测试文件或配置文件",
+            "分析Docker相关配置文件",
+            "检查CI/CD配置文件"
+        ],
+        "documentation_needs": [
+            "API接口文档",
+            "部署指南",
+            "故障排除指南",
+            "性能调优指南"
+        ]
+    },
+    "scan_statistics": {
+        "start_time": "2025-10-22T22:04:36+08:00",
+        "end_time": "2025-10-22T22:15:00+08:00",
+        "duration_minutes": 10.4,
+        "files_processed": 25,
+        "files_skipped": 50,
+        "bytes_analyzed": 150000,
+        "modules_identified": 4,
+        "interfaces_discovered": 7,
+        "generated_docs": 3,
+        "mermaid_diagrams": 1,
+        "navigation_breadcrumbs": 2
+    },
+    "truncated": false,
+    "scan_completion_reason": "项目结构分析完成，核心模块已扫描",
+    "last_updated": "2025-10-22T22:15:00+08:00"
+}
