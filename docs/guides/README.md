@@ -38,14 +38,14 @@ QBittorrent智能下载助手是一个企业级的自动化下载管理工具，
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/your-username/qbittorrent-clipboard-monitor.git
+git clone https://github.com/ashllll/qbittorrent-clipboard-monitor.git
 cd qbittorrent-clipboard-monitor
 
-# 2. 运行主程序（自动处理依赖）
-python main.py
+# 2. 安装依赖
+scripts/setup_dev.sh
 
 # 3. 启动监控
-python main.py start
+python start.py
 ```
 
 ### 配置说明
@@ -113,11 +113,10 @@ python main.py start
 
 ```
 qbittorrent-clipboard-monitor/
-├── src/                    # 源代码
-│   ├── qbittorrent_monitor/  # 主模块
-│   └── start.py            # 启动脚本
-├── tests/                  # 单元测试
-├── libs/                   # 离线依赖
+├── qbittorrent_monitor/      # 主模块（AI、剪贴板、爬虫等）
+├── scripts/                  # setup 与测试脚本
+├── tests/                    # 单元测试
+├── docs/                     # 额外指南
 ├── docs/                   # 文档
 ├── configs/                # 配置文件
 ├── logs/                   # 运行日志

@@ -11,7 +11,7 @@
             {
                 "source_prefix": "/downloads",
                 "target_prefix": "/downloads",
-                "description": "Docker容器到NAS的路径映射"
+                "description": "本地到NAS的路径映射"
             }
         ]
     },

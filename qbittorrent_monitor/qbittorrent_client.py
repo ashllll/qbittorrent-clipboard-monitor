@@ -14,8 +14,7 @@ import logging
 import urllib.parse
 import time
 import hashlib
-from collections import defaultdict, OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple, Any
 import aiohttp
@@ -28,6 +27,7 @@ from tenacity import (
 )
 
 from .config import QBittorrentConfig, CategoryConfig, PathMappingRule, AppConfig
+from .resilience import RateLimiter, CircuitBreaker, LRUCache, MetricsTracker
 from .exceptions import (
     QBittorrentError, NetworkError, QbtAuthError, 
     QbtRateLimitError, QbtPermissionError, TorrentParseError
@@ -57,32 +57,25 @@ class QBittorrentClient:
         self._cleanup_lock = asyncio.Lock()
         
         # 缓存系统
-        self._cache: OrderedDict = OrderedDict()
-        self._cache_max_size = getattr(config, 'cache_max_size', 1000)
-        self._cache_ttl = getattr(config, 'cache_ttl_seconds', 300)  # 5分钟
+        self._cache_ttl = getattr(config, 'cache_ttl_seconds', 300)
+        self._cache = LRUCache(
+            max_size=getattr(config, 'cache_max_size', 1000),
+            ttl_seconds=self._cache_ttl,
+        )
         
         # 性能监控
-        self._stats = {
-            'requests': 0,
-            'cache_hits': 0,
-            'cache_misses': 0,
-            'errors': 0,
-            'response_times': [],
-            'last_request_time': None
-        }
+        self._metrics = MetricsTracker()
         
         # 断路器
-        self._circuit_breaker = {
-            'state': 'closed',  # closed, open, half_open
-            'failure_count': 0,
-            'failure_threshold': getattr(config, 'circuit_breaker_threshold', 5),
-            'recovery_timeout': getattr(config, 'circuit_breaker_timeout', 60),
-            'last_failure_time': None
-        }
+        self._circuit_breaker = CircuitBreaker(
+            failure_threshold=getattr(config, 'circuit_breaker_threshold', 5),
+            recovery_timeout=getattr(config, 'circuit_breaker_timeout', 60),
+            on_state_change=self._on_circuit_state_change,
+        )
         
         # 速率限制
-        self._rate_limiter = defaultdict(list)
         self._max_requests_per_minute = getattr(config, 'max_requests_per_minute', 60)
+        self._rate_limiter = RateLimiter(self._max_requests_per_minute)
         
         # 线程池用于异步操作
         self._executor = ThreadPoolExecutor(max_workers=4)
@@ -231,214 +224,136 @@ class QBittorrentClient:
             key_data += f":data:{sorted(data.items())}"
         return hashlib.md5(key_data.encode()).hexdigest()
     
-    def _get_from_cache(self, cache_key: str) -> Optional[Tuple[Any, datetime]]:
+    def _get_from_cache(self, cache_key: str) -> Optional[Any]:
         """从缓存获取数据"""
-        if cache_key in self._cache:
-            data, timestamp = self._cache[cache_key]
-            if datetime.now() - timestamp < timedelta(seconds=self._cache_ttl):
-                # 移动到末尾（LRU）
-                self._cache.move_to_end(cache_key)
-                self._stats['cache_hits'] += 1
-                return data, timestamp
-            else:
-                # 过期，删除
-                del self._cache[cache_key]
-        
-        self._stats['cache_misses'] += 1
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            self._metrics.inc('cache_hits')
+            return cached
+        self._metrics.inc('cache_misses')
         return None
     
     def _put_to_cache(self, cache_key: str, data: Any):
         """将数据放入缓存"""
-        # 清理过期缓存
-        self._cleanup_cache()
-        
-        # 如果缓存已满，删除最旧的项
-        while len(self._cache) >= self._cache_max_size:
-            self._cache.popitem(last=False)
-        
-        self._cache[cache_key] = (data, datetime.now())
-    
-    def _cleanup_cache(self):
-        """清理过期的缓存项"""
-        now = datetime.now()
-        expired_keys = [
-            key for key, (_, timestamp) in self._cache.items()
-            if now - timestamp >= timedelta(seconds=self._cache_ttl)
-        ]
-        for key in expired_keys:
-            del self._cache[key]
+        self._cache.set(cache_key, data)
     
     def _check_rate_limit(self) -> bool:
         """检查速率限制"""
-        now = time.time()
-        minute_ago = now - 60
-        
-        # 清理一分钟前的请求记录
-        self._rate_limiter['requests'] = [
-            req_time for req_time in self._rate_limiter['requests']
-            if req_time > minute_ago
-        ]
-        
-        # 检查是否超过限制
-        if len(self._rate_limiter['requests']) >= self._max_requests_per_minute:
-            return False
-        
-        # 记录当前请求
-        self._rate_limiter['requests'].append(now)
-        return True
+        return self._rate_limiter.allow()
     
     def _check_circuit_breaker(self) -> bool:
         """检查断路器状态"""
-        now = time.time()
-        
-        if self._circuit_breaker['state'] == 'open':
-            # 检查是否可以进入半开状态
-            if (self._circuit_breaker['last_failure_time'] and 
-                now - self._circuit_breaker['last_failure_time'] > self._circuit_breaker['recovery_timeout']):
-                self._circuit_breaker['state'] = 'half_open'
-                self.logger.info("断路器进入半开状态")
-                return True
-            return False
-        
-        return True
+        return self._circuit_breaker.allow()
     
     def _record_success(self):
         """记录成功请求"""
-        if self._circuit_breaker['state'] == 'half_open':
-            self._circuit_breaker['state'] = 'closed'
-            self._circuit_breaker['failure_count'] = 0
-            self.logger.info("断路器恢复到关闭状态")
-        elif self._circuit_breaker['state'] == 'closed':
-            # 逐渐减少失败计数
-            self._circuit_breaker['failure_count'] = max(0, self._circuit_breaker['failure_count'] - 1)
+        self._circuit_breaker.record_success()
     
     def _record_failure(self):
         """记录失败请求"""
-        self._circuit_breaker['failure_count'] += 1
-        self._circuit_breaker['last_failure_time'] = time.time()
-        
-        if self._circuit_breaker['failure_count'] >= self._circuit_breaker['failure_threshold']:
-            self._circuit_breaker['state'] = 'open'
-            self.logger.warning(f"断路器打开，失败次数: {self._circuit_breaker['failure_count']}")
+        self._circuit_breaker.record_failure()
+    
+    def _on_circuit_state_change(self, state: str):
+        if state == 'open':
+            self.logger.warning("断路器已打开，暂停新的请求")
+        elif state == 'half_open':
+            self.logger.info("断路器进入半开状态，尝试恢复连接")
+        elif state == 'closed':
+            self.logger.info("断路器恢复到关闭状态")
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """获取性能统计信息"""
-        response_times = self._stats['response_times']
+        snapshot = self._metrics.snapshot()
+        cache_total = max(1, snapshot['cache_hits'] + snapshot['cache_misses'])
+        total_requests = max(1, snapshot['requests'])
         return {
-            'total_requests': self._stats['requests'],
-            'cache_hit_rate': (
-                self._stats['cache_hits'] / 
-                max(1, self._stats['cache_hits'] + self._stats['cache_misses'])
-            ) * 100,
-            'error_rate': (self._stats['errors'] / max(1, self._stats['requests'])) * 100,
-            'avg_response_time': sum(response_times) / len(response_times) if response_times else 0,
-            'max_response_time': max(response_times) if response_times else 0,
-            'min_response_time': min(response_times) if response_times else 0,
-            'circuit_breaker_state': self._circuit_breaker['state'],
-            'circuit_breaker_failures': self._circuit_breaker['failure_count'],
+            'total_requests': snapshot['requests'],
+            'cache_hit_rate': (snapshot['cache_hits'] / cache_total) * 100,
+            'error_rate': (snapshot['errors'] / total_requests) * 100,
+            'avg_response_time': snapshot['avg_response_time'],
+            'max_response_time': snapshot['max_response_time'],
+            'min_response_time': snapshot['min_response_time'],
+            'circuit_breaker_state': self._circuit_breaker.state,
+            'circuit_breaker_failures': self._circuit_breaker.failure_count,
             'cache_size': len(self._cache),
             'connection_pool_size': len(self._sessions),
-            'last_request_time': self._stats['last_request_time']
+            'last_request_time': snapshot['last_request_time']
         }
     
     async def _make_request_with_cache(
-        self, 
-        method: str, 
-        url: str, 
-        params: dict = None, 
+        self,
+        method: str,
+        url: str,
+        params: dict = None,
         data: dict = None,
         use_cache: bool = True,
-        cache_ttl: int = None
     ) -> Tuple[int, Any]:
-         """带缓存的HTTP请求方法"""
-         start_time = time.time()
-         
-         # 检查速率限制
-         if not self._check_rate_limit():
-             raise QbtRateLimitError("API请求频率超限")
-         
-         # 检查断路器
-         if not self._check_circuit_breaker():
-             raise QBittorrentError("服务暂时不可用（断路器打开）")
-         
-         # 生成缓存键
-         cache_key = None
-         if use_cache and method.upper() == 'GET':
-             cache_key = self._get_cache_key(method, url, params, data)
-             cached_result = self._get_from_cache(cache_key)
-             if cached_result:
-                 self.logger.debug(f"缓存命中: {method} {url}")
-                 return cached_result[0]
-         
-         # 获取会话
-         session = await self._get_next_session()
-         
-         try:
-             # 发起请求
-             self._stats['requests'] += 1
-             self._stats['last_request_time'] = datetime.now().isoformat()
-             
-             if method.upper() == 'GET':
-                 async with session.get(url, params=params) as resp:
-                     status = resp.status
-                     if resp.content_type == 'application/json':
-                         result = await resp.json()
-                     else:
-                         result = await resp.text()
-             else:
-                 async with session.post(url, data=data, params=params) as resp:
-                     status = resp.status
-                     if resp.content_type == 'application/json':
-                         result = await resp.json()
-                     else:
-                         result = await resp.text()
-             
-             # 记录响应时间
-             response_time = time.time() - start_time
-             self._stats['response_times'].append(response_time)
-             
-             # 保持最近1000个响应时间记录
-             if len(self._stats['response_times']) > 1000:
-                 self._stats['response_times'] = self._stats['response_times'][-1000:]
-             
-             # 处理成功响应
-             if 200 <= status < 300:
-                 self._record_success()
-                 
-                 # 缓存GET请求的成功响应
-                 if use_cache and method.upper() == 'GET' and cache_key:
-                     # 使用自定义TTL或默认TTL
-                     if cache_ttl:
-                         original_ttl = self._cache_ttl
-                         self._cache_ttl = cache_ttl
-                         self._put_to_cache(cache_key, (status, result))
-                         self._cache_ttl = original_ttl
-                     else:
-                         self._put_to_cache(cache_key, (status, result))
-                 
-                 return status, result
-             else:
-                 # 处理错误响应
-                 self._stats['errors'] += 1
-                 if status >= 500:  # 服务器错误才触发断路器
-                     self._record_failure()
-                 
-                 if status == 403:
-                     raise QbtPermissionError(f"权限不足: {result}")
-                 elif status == 429:
-                     raise QbtRateLimitError(f"请求过于频繁: {result}")
-                 else:
-                     raise QBittorrentError(f"请求失败 (HTTP {status}): {result}")
-                     
-         except aiohttp.ClientError as e:
-             self._stats['errors'] += 1
-             self._record_failure()
-             raise NetworkError(f"网络请求错误: {str(e)}") from e
-         except Exception as e:
-             self._stats['errors'] += 1
-             self._record_failure()
-             raise
-    
+        """带缓存的HTTP请求方法"""
+        start_time = time.time()
+
+        if not self._check_rate_limit():
+            raise QbtRateLimitError("API请求频率超限")
+
+        if not self._check_circuit_breaker():
+            raise QBittorrentError("服务暂时不可用（断路器打开）")
+
+        cache_key = None
+        if use_cache and method.upper() == 'GET':
+            cache_key = self._get_cache_key(method, url, params, data)
+            cached_result = self._get_from_cache(cache_key)
+            if cached_result:
+                self.logger.debug(f"缓存命中: {method} {url}")
+                return cached_result
+
+        session = await self._get_next_session()
+
+        try:
+            self._metrics.inc('requests')
+            self._metrics.update_last_request_time(datetime.now().isoformat())
+
+            if method.upper() == 'GET':
+                async with session.get(url, params=params) as resp:
+                    status = resp.status
+                    if resp.content_type == 'application/json':
+                        result = await resp.json()
+                    else:
+                        result = await resp.text()
+            else:
+                async with session.post(url, data=data, params=params) as resp:
+                    status = resp.status
+                    if resp.content_type == 'application/json':
+                        result = await resp.json()
+                    else:
+                        result = await resp.text()
+
+            response_time = time.time() - start_time
+            self._metrics.record_response(response_time)
+
+            if 200 <= status < 300:
+                self._record_success()
+                if use_cache and method.upper() == 'GET' and cache_key:
+                    self._put_to_cache(cache_key, (status, result))
+                return status, result
+
+            self._metrics.inc('errors')
+            if status >= 500:
+                self._record_failure()
+
+            if status == 403:
+                raise QbtPermissionError(f"权限不足: {result}")
+            if status == 429:
+                raise QbtRateLimitError(f"请求过于频繁: {result}")
+            raise QBittorrentError(f"请求失败 (HTTP {status}): {result}")
+
+        except aiohttp.ClientError as e:
+            self._metrics.inc('errors')
+            self._record_failure()
+            raise NetworkError(f"网络请求错误: {str(e)}") from e
+        except Exception as e:
+            self._metrics.inc('errors')
+            self._record_failure()
+            raise
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=0.5, min=0.5, max=5),

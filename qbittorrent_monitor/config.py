@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 增强的配置管理模块
 
@@ -18,7 +20,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Union, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from pydantic import BaseModel, ValidationError, Field, validator
+from pydantic import BaseModel, ValidationError, Field, field_validator, ConfigDict
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import asyncio
@@ -54,7 +56,7 @@ class ConfigStats:
 @dataclass
 class ConfigCacheEntry:
     """配置缓存条目"""
-    data: Dict[str, Any]
+    data: Any
     hash_value: str
     timestamp: datetime
     access_count: int = 0
@@ -68,6 +70,41 @@ class ConfigCacheEntry:
         """更新访问时间和计数"""
         self.access_count += 1
         self.last_access = datetime.now()
+
+
+class ConfigCache:
+    """线程安全的配置缓存"""
+
+    def __init__(self, ttl_seconds: int = 300):
+        self.ttl_seconds = ttl_seconds
+        self._entries: Dict[str, ConfigCacheEntry] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> Optional["AppConfig"]:
+        """获取缓存数据"""
+        with self._lock:
+            entry = self._entries.get(key)
+            if not entry:
+                return None
+            if entry.is_expired(self.ttl_seconds):
+                del self._entries[key]
+                return None
+            entry.touch()
+            return entry.data  # type: ignore[return-value]
+
+    def set(self, key: str, value: "AppConfig"):
+        """设置缓存数据"""
+        with self._lock:
+            self._entries[key] = ConfigCacheEntry(
+                data=value,
+                hash_value=key,
+                timestamp=datetime.now(),
+            )
+
+    def clear(self):
+        """清空缓存"""
+        with self._lock:
+            self._entries.clear()
 
 
 class ConfigTemplate:
@@ -137,8 +174,11 @@ class CategoryConfig(BaseModel):
     rules: Optional[List[Dict[str, Any]]] = None
     priority: int = 0  # 分类优先级
     
-    @validator('save_path')
-    def validate_save_path(cls, v):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    @field_validator('save_path')
+    @classmethod
+    def validate_save_path(cls, v: str) -> str:
         """验证保存路径"""
         if not v or not v.strip():
             raise ValueError('保存路径不能为空')
@@ -147,23 +187,22 @@ class CategoryConfig(BaseModel):
             v = v + '/'
         return v
     
-    @validator('priority')
-    def validate_priority(cls, v):
+    @field_validator('priority')
+    @classmethod
+    def validate_priority(cls, v: int) -> int:
         """验证优先级"""
         if v < 0 or v > 100:
             raise ValueError('优先级必须在0-100之间')
         return v
     
-    @validator('keywords')
-    def validate_keywords(cls, v):
+    @field_validator('keywords')
+    @classmethod
+    def validate_keywords(cls, v: List[str]) -> List[str]:
         """验证关键词"""
         if v:
             # 去除空字符串和重复项
             v = list(set(k.strip() for k in v if k.strip()))
         return v
-    
-    class Config:
-        validate_by_name = True
 
 
 class PathMappingRule(BaseModel):
@@ -185,29 +224,33 @@ class QBittorrentConfig(BaseModel):
     use_nas_paths_directly: bool = False
     path_mapping: List[PathMappingRule] = []
     
-    @validator('host')
-    def validate_host(cls, v):
+    @field_validator('host')
+    @classmethod
+    def validate_host(cls, v: str) -> str:
         """验证主机地址"""
         if not v or not v.strip():
             raise ValueError('主机地址不能为空')
         return v.strip()
     
-    @validator('port')
-    def validate_port(cls, v):
+    @field_validator('port')
+    @classmethod
+    def validate_port(cls, v: int) -> int:
         """验证端口号"""
         if not (1 <= v <= 65535):
             raise ValueError('端口号必须在1-65535之间')
         return v
     
-    @validator('username')
-    def validate_username(cls, v):
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v: str) -> str:
         """验证用户名"""
         if not v or not v.strip():
             raise ValueError('用户名不能为空')
         return v.strip()
     
-    @validator('password')
-    def validate_password(cls, v):
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v: str) -> str:
         """验证密码"""
         if not v:
             raise ValueError('密码不能为空')
@@ -224,31 +267,21 @@ class DeepSeekConfig(BaseModel):
     retry_delay: float = 1.0
     # Few-shot示例
     few_shot_examples: Optional[List[Dict[str, str]]] = None
-    prompt_template: str = """你是一个专业的种子分类助手。请根据以下规则，将种子名称分类到最合适的类别中。
+    prompt_template: str = """你是下载分类助手。根据给定类别快速判断种子所属类别，并只返回 tv/movies/adult/anime/music/games/software/other 中的一个。
 
-种子名称: {torrent_name}
-
-可用分类及其描述:
+种子: {torrent_name}
+分类列表:
 {category_descriptions}
 
-关键词提示:
+常见关键词:
 {category_keywords}
 
 {few_shot_examples}
-
-分类要求：
-1. 仔细分析种子名称中的关键词和特征，特别注意文件扩展名和分辨率信息。
-2. 电视剧通常包含S01E01这样的季和集信息，或者包含"剧集"、"Season"、"Episode"等词。
-3. 电影通常包含年份(如2020)、分辨率(1080p、4K)或"BluRay"、"WEB-DL"等标签。
-4. 成人内容通常包含明显的成人关键词，或成人内容制作商名称。
-5. 日本动画通常包含"动画"、"Anime"或"Fansub"等术语。
-6. 如果同时符合多个分类，选择最合适的那个。
-7. 如果无法确定分类或不属于任何明确分类，返回'other'。
-
-请只返回最合适的分类名称（例如：tv, movies, adult, anime, music, games, software, other），不要包含任何其他解释或文字。"""
+若无法确定，返回 other。"""
     
-    @validator('base_url')
-    def validate_base_url(cls, v):
+    @field_validator('base_url')
+    @classmethod
+    def validate_base_url(cls, v: str) -> str:
         """验证API基础URL"""
         if not v or not v.strip():
             raise ValueError('API基础URL不能为空')
@@ -256,22 +289,25 @@ class DeepSeekConfig(BaseModel):
             raise ValueError('API基础URL必须以http://或https://开头')
         return v.strip().rstrip('/')
     
-    @validator('timeout')
-    def validate_timeout(cls, v):
+    @field_validator('timeout')
+    @classmethod
+    def validate_timeout(cls, v: int) -> int:
         """验证超时时间"""
         if v <= 0 or v > 300:
             raise ValueError('超时时间必须在1-300秒之间')
         return v
     
-    @validator('max_retries')
-    def validate_max_retries(cls, v):
+    @field_validator('max_retries')
+    @classmethod
+    def validate_max_retries(cls, v: int) -> int:
         """验证最大重试次数"""
         if v < 0 or v > 10:
             raise ValueError('最大重试次数必须在0-10之间')
         return v
     
-    @validator('retry_delay')
-    def validate_retry_delay(cls, v):
+    @field_validator('retry_delay')
+    @classmethod
+    def validate_retry_delay(cls, v: float) -> float:
         """验证重试延迟"""
         if v < 0 or v > 60:
             raise ValueError('重试延迟必须在0-60秒之间')
@@ -306,64 +342,73 @@ class WebCrawlerConfig(BaseModel):
     # 代理配置
     proxy: Optional[str] = None
     
-    @validator('page_timeout')
-    def validate_page_timeout(cls, v):
+    @field_validator('page_timeout')
+    @classmethod
+    def validate_page_timeout(cls, v: int) -> int:
         """验证页面超时时间"""
         if v <= 0 or v > 300000:  # 最大5分钟
             raise ValueError('页面超时时间必须在1-300000毫秒之间')
         return v
     
-    @validator('wait_for')
-    def validate_wait_for(cls, v):
+    @field_validator('wait_for')
+    @classmethod
+    def validate_wait_for(cls, v: int) -> int:
         """验证页面加载等待时间"""
         if v < 0 or v > 60:
             raise ValueError('页面加载等待时间必须在0-60秒之间')
         return v
     
-    @validator('delay_before_return')
-    def validate_delay_before_return(cls, v):
+    @field_validator('delay_before_return')
+    @classmethod
+    def validate_delay_before_return(cls, v: int) -> int:
         """验证返回前等待时间"""
         if v < 0 or v > 30:
             raise ValueError('返回前等待时间必须在0-30秒之间')
         return v
     
-    @validator('max_retries')
-    def validate_max_retries(cls, v):
+    @field_validator('max_retries')
+    @classmethod
+    def validate_max_retries(cls, v: int) -> int:
         """验证最大重试次数"""
         if v < 0 or v > 10:
             raise ValueError('最大重试次数必须在0-10之间')
         return v
     
-    @validator('base_delay')
-    def validate_base_delay(cls, v):
+    @field_validator('base_delay')
+    @classmethod
+    def validate_base_delay(cls, v: int) -> int:
         """验证基础延迟时间"""
         if v < 0 or v > 300:
             raise ValueError('基础延迟时间必须在0-300秒之间')
         return v
     
-    @validator('max_delay')
-    def validate_max_delay(cls, v):
+    @field_validator('max_delay')
+    @classmethod
+    def validate_max_delay(cls, v: int) -> int:
         """验证最大延迟时间"""
         if v < 0 or v > 600:
             raise ValueError('最大延迟时间必须在0-600秒之间')
         return v
     
-    @validator('max_concurrent_extractions')
-    def validate_max_concurrent_extractions(cls, v):
+    @field_validator('max_concurrent_extractions')
+    @classmethod
+    def validate_max_concurrent_extractions(cls, v: int) -> int:
         """验证最大并发提取数"""
         if v <= 0 or v > 20:
             raise ValueError('最大并发提取数必须在1-20之间')
         return v
     
-    @validator('inter_request_delay')
-    def validate_inter_request_delay(cls, v):
+    @field_validator('inter_request_delay')
+    @classmethod
+    def validate_inter_request_delay(cls, v: float) -> float:
         """验证请求间延迟"""
         if v < 0 or v > 60:
             raise ValueError('请求间延迟必须在0-60秒之间')
         return v
     
-    @validator('proxy')
-    def validate_proxy(cls, v):
+    @field_validator('proxy')
+    @classmethod
+    def validate_proxy(cls, v: Optional[str]) -> Optional[str]:
         """验证代理配置"""
         if v and not v.startswith(('http://', 'https://', 'socks4://', 'socks5://')):
             raise ValueError('代理地址格式不正确，必须以http://、https://、socks4://或socks5://开头')
@@ -463,13 +508,12 @@ class ConfigManager:
         
         # 增强功能
         self._stats = ConfigStats()
-        self._cache: Dict[str, ConfigCacheEntry] = {}
-        self._cache_lock = threading.Lock()
+        self.cache_ttl = 300  # 缓存TTL（秒）
+        self._cache = ConfigCache(ttl_seconds=self.cache_ttl)
         self._validation_cache: Dict[str, bool] = {}
         self._template_cache: Dict[str, Dict[str, Any]] = {}
         
         # 配置选项
-        self.cache_ttl = 300  # 缓存TTL（秒）
         self.enable_validation_cache = True
         self.enable_performance_monitoring = True
     
@@ -601,31 +645,11 @@ class ConfigManager:
     
     def _get_from_cache(self, cache_key: str) -> Optional[AppConfig]:
         """从缓存获取配置"""
-        with self._cache_lock:
-            entry = self._cache.get(cache_key)
-            if entry and not entry.is_expired(self.cache_ttl):
-                entry.touch()
-                return entry.data
-            elif entry:
-                # 清理过期缓存
-                del self._cache[cache_key]
-        return None
+        return self._cache.get(cache_key)
     
     def _put_to_cache(self, cache_key: str, config: AppConfig):
         """将配置放入缓存"""
-        with self._cache_lock:
-            # 限制缓存大小
-            if len(self._cache) >= 10:
-                # 删除最旧的缓存项
-                oldest_key = min(self._cache.keys(), 
-                               key=lambda k: self._cache[k].timestamp)
-                del self._cache[oldest_key]
-            
-            self._cache[cache_key] = ConfigCacheEntry(
-                data=config,
-                hash_value=cache_key,
-                timestamp=datetime.now()
-            )
+        self._cache.set(cache_key, config)
     
     def _get_validation_key(self, config_data: Dict[str, Any]) -> str:
         """生成配置验证键"""
@@ -661,8 +685,7 @@ class ConfigManager:
             old_config = self.config
             
             # 清理缓存以强制重新加载
-            with self._cache_lock:
-                self._cache.clear()
+            self._cache.clear()
             self._validation_cache.clear()
             
             new_config = await self.load_config()
@@ -705,8 +728,7 @@ class ConfigManager:
     
     def clear_cache(self):
         """清理所有缓存"""
-        with self._cache_lock:
-            self._cache.clear()
+        self._cache.clear()
         self._validation_cache.clear()
         self.logger.info("配置缓存已清理")
     
@@ -790,7 +812,7 @@ class ConfigManager:
                     {
                         "source_prefix": "/downloads",
                         "target_prefix": "/vol1/downloads",
-                        "description": "Docker容器到NAS的路径映射"
+                        "description": "本地到NAS的路径映射"
                     }
                 ]
             },

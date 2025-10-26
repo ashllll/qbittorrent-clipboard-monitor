@@ -11,35 +11,21 @@
 
 import asyncio
 import logging
-import re
 import threading
 import time
 from collections import deque
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Set
-import pyperclip
-from concurrent.futures import ThreadPoolExecutor
 
 from .config import AppConfig
 from .qbittorrent_client import QBittorrentClient
 from .ai_classifier import AIClassifier
-from .utils import parse_magnet, validate_magnet_link, NotificationManager
-from .exceptions import ClipboardError, TorrentParseError
-
-
-class TorrentRecord:
-    """种子处理记录"""
-    
-    def __init__(self, magnet_link: str, torrent_hash: str, torrent_name: str):
-        self.magnet_link = magnet_link
-        self.torrent_hash = torrent_hash
-        self.torrent_name = torrent_name
-        self.timestamp = datetime.now()
-        self.category: Optional[str] = None
-        self.status: str = "pending"  # pending, success, failed, duplicate
-        self.error_message: Optional[str] = None
-        self.classification_method: Optional[str] = None
-        self.save_path: Optional[str] = None
+from .clipboard_poller import ClipboardPoller, PollerConfig
+from .clipboard_processor import ClipboardContentProcessor
+from .clipboard_actions import ClipboardActionExecutor
+from .clipboard_models import TorrentRecord
+from .notifications import NotificationManager
+from .exceptions import ClipboardError
 
 
 class ClipboardMonitor:
@@ -58,53 +44,13 @@ class ClipboardMonitor:
         self.config = config
         self.logger = logging.getLogger('ClipboardMonitor')
         
-        # 剪贴板状态管理
         self.last_clip = ""
-        self.last_clip_hash = 0  # 用于快速比较
-        self.clipboard_lock = asyncio.Lock()
-        
-        # 线程池用于同步操作
-        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="clipboard")
-        
-        # 磁力链接正则模式（编译一次，重复使用）
-        self.magnet_pattern = re.compile(
-            r"^magnet:\?xt=urn:btih:[0-9a-fA-F]{40,}.*",
-            re.IGNORECASE
-        )
-        
-        # XXXClub URL正则模式
-        self.xxxclub_pattern = re.compile(
-            r"https?://(?:www\.)?xxxclub\.to/torrents/search/.*",
-            re.IGNORECASE
-        )
-        
-        # 通用URL正则模式
-        self.url_pattern = re.compile(
-            r"https?://[^\s]+",
-            re.IGNORECASE
-        )
-        
-        # 初始化AI分类器
-        self.ai_classifier = AIClassifier(config.deepseek)
-        
-        # 初始化通知管理器
-        self.notification_manager = NotificationManager(config.notifications.model_dump())
-        
-        # 处理历史记录（使用deque提升性能）
-        self.history: deque = deque(maxlen=1000)  # 自动限制大小
-        
-        # 重复检测缓存（LRU缓存，防止内存泄漏）
+
+        # 提前初始化监控状态，确保异常时也可安全清理
+        self.history: deque = deque(maxlen=1000)
         self._duplicate_cache: Set[str] = set()
         self._cache_cleanup_time = datetime.now()
         self._max_cache_size = 10000
-        
-        # 动态轮询间隔
-        self._base_interval = max(0.5, min(config.check_interval, 5.0))  # 限制在0.5-5秒
-        self._current_interval = self._base_interval
-        self._idle_count = 0
-        self._max_interval = self._base_interval * 4  # 最大间隔
-        
-        # 统计信息
         self.stats = {
             'total_processed': 0,
             'successful_adds': 0,
@@ -122,19 +68,35 @@ class ClipboardMonitor:
                 'total_process_time': 0.0
             }
         }
-        
-        # 监控状态
         self.is_running = False
         self.last_error_time: Optional[datetime] = None
         self.consecutive_errors = 0
         self.last_stats_report = datetime.now()
-        
-        # 性能监控
-        self._process_times: deque = deque(maxlen=100)  # 保存最近100次处理时间
-        
-        # 清理状态标志
+        self._process_times: deque = deque(maxlen=100)
         self._is_cleaned_up = False
         self._cleanup_lock = asyncio.Lock()
+
+        # 初始化AI分类器 & 通知组件
+        self.ai_classifier = AIClassifier(config.deepseek)
+        self.notification_manager = NotificationManager(config.notifications.model_dump())
+        self.content_processor = ClipboardContentProcessor()
+        self.action_executor = ClipboardActionExecutor(
+            self.qbt,
+            self.config,
+            self.ai_classifier,
+            self.notification_manager,
+            self.stats,
+            self._add_to_history,
+            logger=self.logger,
+        )
+
+        base_interval = max(0.5, min(config.check_interval, 5.0))
+        poller_config = PollerConfig(base_interval=base_interval)
+        self.poller = ClipboardPoller(poller_config, self._on_clipboard_change)
+        self._pending_clip: Optional[str] = None
+        self._clip_event = asyncio.Event()
+        self._base_interval = poller_config.base_interval
+        self._max_interval = poller_config.max_interval
         
     async def start(self):
         """启动剪贴板监控循环"""
@@ -144,22 +106,23 @@ class ClipboardMonitor:
         # 欢迎消息
         self._show_welcome_message()
         
+        poller_task = asyncio.create_task(self.poller.start())
         try:
             while self.is_running:
+                await self._clip_event.wait()
+                self._clip_event.clear()
+                clip = self._pending_clip
+                self._pending_clip = None
+                if clip is None:
+                    continue
+
                 cycle_start = time.time()
-                
-                await self._monitor_cycle()
-                
-                # 记录处理时间
+                await self._process_clipboard_text(clip)
+
                 cycle_time = time.time() - cycle_start
                 self._process_times.append(cycle_time)
-                
-                # 更新性能指标
                 self._update_performance_metrics(cycle_time)
-                
-                # 动态调整轮询间隔
-                await asyncio.sleep(self._current_interval)
-                
+
         except asyncio.CancelledError:
             self.logger.info("监控已取消")
             raise
@@ -169,7 +132,12 @@ class ClipboardMonitor:
             raise
         finally:
             self.is_running = False
-            # 清理资源
+            self.poller.stop()
+            poller_task.cancel()
+            try:
+                await poller_task
+            except asyncio.CancelledError:
+                pass
             await self.cleanup()
             self.logger.info("剪贴板监控已停止")
             self._show_farewell_message()
@@ -177,58 +145,37 @@ class ClipboardMonitor:
     def stop(self):
         """停止监控"""
         self.is_running = False
+        self.poller.stop()
+        self._clip_event.set()
+
+    def _on_clipboard_change(self, text: str):
+        """处理剪贴板变更回调"""
+        if not self.is_running:
+            return
+        self.stats['clipboard_reads'] = self.poller.clipboard_reads
+        self._pending_clip = text or ""
+        self._clip_event.set()
     
-    async def _monitor_cycle(self):
-        """高性能单次监控循环"""
+    async def _process_clipboard_text(self, current_clip: str):
         try:
-            # 异步获取剪贴板内容
-            current_clip = await self._get_clipboard_async()
-            self.stats['clipboard_reads'] += 1
-            
-            # 快速哈希比较，避免字符串比较开销
-            current_hash = hash(current_clip) if current_clip else 0
-            
-            if current_hash == self.last_clip_hash:
-                # 内容未变化，增加空闲计数
-                self._idle_count += 1
-                self._adjust_polling_interval()
-                return
-            
-            # 内容发生变化，重置空闲计数
-            self._idle_count = 0
-            self._current_interval = self._base_interval
-            
-            if not current_clip or not current_clip.strip():
-                self.last_clip = current_clip
-                self.last_clip_hash = current_hash
-                return
-            
-            content = current_clip.strip()
-            
-            # 检查是否为磁力链接
-            if self.magnet_pattern.match(content):
-                self.last_clip = current_clip
-                self.last_clip_hash = current_hash
-                await self._process_magnet(content)
-                
-            # 检查是否为网页URL
-            elif (self.xxxclub_pattern.match(content) or 
-                  self.url_pattern.match(content)):
-                self.last_clip = current_clip
-                self.last_clip_hash = current_hash
-                await self._process_url(content)
-            
-            else:
-                # 更新剪贴板状态但不处理
-                self.last_clip = current_clip
-                self.last_clip_hash = current_hash
-            
+            task = self.content_processor.process(current_clip)
+            self.last_clip = current_clip or ""
+
+            handled = False
+            if task.kind == "magnet":
+                await self.action_executor.handle_magnet(task.content)
+                handled = True
+            elif task.kind == "url":
+                await self.action_executor.handle_url(task.content)
+                handled = True
+
             # 重置错误计数
             self.consecutive_errors = 0
             self.last_error_time = None
             
             # 定期清理缓存和报告统计
-            await self._periodic_maintenance()
+            if handled:
+                await self._periodic_maintenance()
                 
         except Exception as e:
             self.consecutive_errors += 1
@@ -239,243 +186,6 @@ class ClipboardMonitor:
             else:
                 self.logger.error(f"连续监控错误过多，可能需要重启: {str(e)}")
                 await self._handle_monitor_error(e)
-    
-    async def _process_magnet(self, magnet_link: str):
-        """高性能处理磁力链接"""
-        process_start = time.time()
-        
-        self.logger.info(f"🔍 发现新磁力链接: {magnet_link[:60]}...")
-        
-        # 验证磁力链接格式
-        if not validate_magnet_link(magnet_link):
-            self.logger.error("❌ 无效的磁力链接格式")
-            self.stats['failed_adds'] += 1
-            return
-        
-        try:
-            # 解析磁力链接获取详细信息
-            torrent_hash, torrent_name = parse_magnet(magnet_link)
-            if not torrent_hash:
-                raise TorrentParseError("无法解析磁力链接哈希值")
-            
-            # 检查是否重复（使用哈希值检查）
-            if await self.qbt._is_duplicate(torrent_hash):
-                self.logger.info(f"⚠️ 跳过重复种子: {torrent_hash[:8]}")
-                self.stats['duplicates_skipped'] += 1
-                return
-            
-            # 如果磁力链接没有dn参数（显示名），先添加种子再获取真实名称
-            temp_added = False
-            if not torrent_name:
-                self.logger.info("📥 磁力链接缺少文件名，先添加种子以获取真实名称...")
-                
-                # 使用临时分类先添加种子
-                temp_success = await self.qbt.add_torrent(magnet_link, "other")
-                if not temp_success:
-                    self.logger.error("❌ 添加种子失败")
-                    self.stats['failed_adds'] += 1
-                    return
-                
-                temp_added = True
-                
-                # 等待一段时间让qBittorrent处理种子
-                await asyncio.sleep(2)
-                
-                # 获取种子的真实名称
-                try:
-                    torrent_info = await self.qbt.get_torrent_properties(torrent_hash)
-                    if 'name' in torrent_info and torrent_info['name']:
-                        torrent_name = torrent_info['name']
-                        self.logger.info(f"📁 获取到真实文件名: {torrent_name}")
-                    else:
-                        torrent_name = f"未命名_{torrent_hash[:8]}"
-                        self.logger.warning(f"⚠️ 无法获取真实文件名，使用: {torrent_name}")
-                except Exception as e:
-                    torrent_name = f"未命名_{torrent_hash[:8]}"
-                    self.logger.warning(f"⚠️ 获取种子信息失败: {str(e)}，使用: {torrent_name}")
-            
-            # 创建记录
-            record = TorrentRecord(magnet_link, torrent_hash, torrent_name)
-            self._add_to_history(record)
-            self.stats['total_processed'] += 1
-            
-            self.logger.info(f"📁 处理种子: {record.torrent_name}")
-            
-            # AI分类（使用真实的种子名称）
-            try:
-                category = await asyncio.wait_for(
-                    self._classify_torrent(record), 
-                    timeout=10.0
-                )
-                record.category = category
-            except asyncio.TimeoutError:
-                self.logger.warning("AI分类超时，使用默认分类")
-                record.category = "other"
-            except Exception as e:
-                self.logger.warning(f"分类失败: {str(e)}，使用默认分类")
-                record.category = "other"
-            
-            # 获取保存路径
-            save_path = await self._get_save_path(record.category)
-            record.save_path = save_path
-            
-            # 如果之前临时添加了种子，现在需要更新分类
-            if temp_added:
-                self.logger.info(f"🔄 更新种子分类: {record.category}")
-                # 更新种子分类
-                if record.category != "other":
-                    try:
-                        url = f"{self.qbt._base_url}/api/v2/torrents/setCategory"
-                        data = {
-                            'hashes': torrent_hash,
-                            'category': record.category
-                        }
-                        async with self.qbt.session.post(url, data=data) as resp:
-                            if resp.status == 200:
-                                self.logger.info(f"✅ 种子分类已更新: {record.category}")
-                            else:
-                                self.logger.warning(f"⚠️ 更新分类失败: HTTP {resp.status}")
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ 更新分类异常: {str(e)}")
-                
-                record.status = "success"
-            else:
-                # 正常添加种子（磁力链接有完整名称）
-                success = await self._add_torrent_to_client(record)
-                if not success:
-                    return
-            
-            # 记录处理时间
-            process_time = time.time() - process_start
-            self.stats['performance_metrics']['total_process_time'] += process_time
-            
-            # 发送通知
-            await self._send_success_notification(record)
-            
-            self.stats['successful_adds'] += 1
-            self.logger.info(f"✅ 成功添加种子: {record.torrent_name} -> {record.category} ({process_time:.2f}s)")
-            
-        except Exception as e:
-            process_time = time.time() - process_start
-            self.logger.error(f"❌ 处理磁力链接失败: {str(e)} ({process_time:.2f}s)")
-            self.stats['failed_adds'] += 1
-            
-            # 记录错误统计
-            if 'errors' not in self.stats:
-                self.stats['errors'] = 0
-            self.stats['errors'] += 1
-    
-    async def _send_success_notification(self, record: TorrentRecord):
-        """发送成功通知"""
-        try:
-            await self.notification_manager.send_torrent_success(
-                record.torrent_name,
-                record.category,
-                record.save_path or "默认路径",
-                record.torrent_hash,
-                record.classification_method or "AI"
-            )
-        except Exception as e:
-            self.logger.warning(f"发送通知失败: {str(e)}")
-    
-    async def _check_duplicate(self, record: TorrentRecord) -> bool:
-        """检查种子是否重复"""
-        try:
-            if await self.qbt._is_duplicate(record.torrent_hash):
-                record.status = "duplicate"
-                self.stats['duplicates_skipped'] += 1
-                
-                await self.notification_manager.send_duplicate_notification(
-                    record.torrent_name,
-                    record.torrent_hash
-                )
-                
-                self.logger.info(f"⚠️ 跳过重复种子: {record.torrent_name}")
-                return True
-                
-        except Exception as e:
-            self.logger.warning(f"检查重复失败: {str(e)}")
-            
-        return False
-    
-    async def _classify_torrent(self, record: TorrentRecord) -> str:
-        """分类种子"""
-        try:
-            category = await self.ai_classifier.classify(
-                record.torrent_name, 
-                self.config.categories
-            )
-            
-            # 统计分类方式
-            if hasattr(self.ai_classifier, 'client') and self.ai_classifier.client:
-                self.stats['ai_classifications'] += 1
-                record.classification_method = "AI"
-            else:
-                self.stats['rule_classifications'] += 1
-                record.classification_method = "规则"
-            
-            self.logger.info(f"🧠 分类结果: {record.torrent_name[:50]}... -> {category} ({record.classification_method})")
-            return category
-            
-        except Exception as e:
-            self.logger.error(f"❌ 分类失败: {str(e)}, 使用默认分类 'other'")
-            self.stats['rule_classifications'] += 1
-            record.classification_method = "默认"
-            return "other"
-    
-
-    
-    async def _add_torrent_to_client(self, record: TorrentRecord) -> bool:
-        """将种子添加到qBittorrent客户端"""
-        try:
-            # 准备要传递给客户端的额外参数
-            torrent_params = {
-                'paused': self.config.add_torrents_paused
-            }
-            # 只有在提供了明确的重命名时才添加rename参数
-            if record.torrent_name:
-                torrent_params['rename'] = record.torrent_name
-
-            # 添加种子
-            success = await self.qbt.add_torrent(
-                record.magnet_link,
-                record.category or "other",
-                **torrent_params
-            )
-            
-            if not success:
-                # 如果初始添加不成功（例如，因为哈希已经存在），则返回False
-                record.error_message = "添加到客户端失败"
-                return False
-                
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"添加种子到qBittorrent时出错: {str(e)}")
-            record.error_message = f"客户端错误: {str(e)}"
-            return False
-    
-    async def _get_clipboard_async(self) -> str:
-        """异步获取剪贴板内容"""
-        loop = asyncio.get_event_loop()
-        try:
-            # 使用线程池执行同步的剪贴板操作
-            return await loop.run_in_executor(self._executor, pyperclip.paste)
-        except Exception as e:
-            self.logger.warning(f"剪贴板访问失败: {e}")
-            return ""
-    
-    def _adjust_polling_interval(self):
-        """动态调整轮询间隔"""
-        if self._idle_count < 10:
-            # 前10次空闲保持基础间隔
-            self._current_interval = self._base_interval
-        elif self._idle_count < 50:
-            # 11-50次空闲，逐渐增加间隔
-            self._current_interval = min(self._base_interval * 2, self._max_interval)
-        else:
-            # 50次以上空闲，使用最大间隔
-            self._current_interval = self._max_interval
     
     def _update_performance_metrics(self, cycle_time: float):
         """更新性能指标"""
@@ -747,12 +457,6 @@ class ClipboardMonitor:
                 self._running = False
                 self.logger.info("🔍 [诊断] 监控状态已设置为停止")
                 
-                # 关闭线程池
-                if hasattr(self, '_executor') and self._executor:
-                    self.logger.info("🔍 [诊断] 关闭线程池...")
-                    self._executor.shutdown(wait=True)
-                    self.logger.info("✅ [诊断] 线程池已关闭")
-                
                 # 清理Web爬虫（如果存在）
                 if hasattr(self, 'web_crawler') and self.web_crawler:
                     self.logger.info("🔍 [诊断] 清理Web爬虫资源...")
@@ -822,7 +526,8 @@ class ClipboardMonitor:
     
     def get_status(self) -> Dict:
         """获取监控状态"""
-        recent_history = self.history[-10:] if self.history else []
+        history_snapshot = list(self.history)
+        recent_history = history_snapshot[-10:] if history_snapshot else []
         
         return {
             'is_running': self.is_running,
@@ -846,7 +551,8 @@ class ClipboardMonitor:
     
     def get_history(self, limit: int = 100) -> List[Dict]:
         """获取处理历史记录"""
-        recent_records = self.history[-limit:] if limit > 0 else self.history
+        history_snapshot = list(self.history)
+        recent_records = history_snapshot[-limit:] if limit > 0 else history_snapshot
         
         return [
             {

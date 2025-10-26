@@ -67,17 +67,6 @@ pip install -r requirements.txt
 python start.py
 ```
 
-### Docker 部署
-
-```bash
-# 使用 Docker Compose
-docker-compose up -d
-
-# 或者构建并运行
-docker build -t qbittorrent-monitor .
-docker run -d --name qbittorrent-monitor qbittorrent-monitor
-```
-
 ## 📋 版本更新记录
 
 ### v2.2.0 (2025-10-22) - **API 合规性重构**
@@ -110,25 +99,22 @@ docker run -d --name qbittorrent-monitor qbittorrent-monitor
 ```
 qbittorrent-clipboard-monitor/
 ├── qbittorrent_monitor/                    # 核心代码模块
-│   ├── api_compliant_client.py           # 100% API 合规客户端
-│   ├── local_processor.py               # 本地功能处理器
-│   ├── api_compliant_main.py             # API 合规主程序
-│   ├── core/                            # 优化核心模块
-│   │   ├── link_parser.py               # 状态机解析器
-│   │   ├── cache_manager.py             # 多层缓存系统
-│   │   ├── adaptive_clipboard_monitor.py # 智能监控器
-│   │   └── protocols/                   # 协议处理器
-│   ├── config.py                         # 配置管理
-│   ├── ai_classifier.py                  # AI 分类器
-│   ├── web_crawler.py                   # 网页爬虫
-│   └── exceptions.py                    # 异常定义
+│   ├── ai_classifier.py                    # AI 分类器
+│   ├── clipboard_monitor.py                # 剪贴板调度器
+│   ├── clipboard_poller.py/processor.py    # 剪贴板轮询 & 内容解析
+│   ├── clipboard_actions.py                # 执行动作（AI/去重/通知）
+│   ├── config.py                           # 配置管理
+│   ├── qbittorrent_client.py               # qBittorrent 客户端
+│   ├── web_crawler.py                      # 弹性网页爬虫
+│   ├── resilience.py                       # 缓存/速率限制/断路器
+│   ├── notifications.py                    # 通知系统
+│   ├── logging_config.py                   # 日志配置
+│   └── exceptions.py                       # 异常定义
 ├── tests/                              # 测试代码
-│   ├── test_api_compliance.py            # API 合规性测试
-│   ├── test_integration.py               # 集成测试
-│   └── test_performance.py               # 性能测试
+│   ├── unit/                             # 单元测试
+│   └── integration/                      # 集成测试
 ├── docs/                               # 项目文档
-├── scripts/                            # 部署脚本
-├── docker-compose.yml                   # Docker 配置
+├── scripts/                            # 开发/测试脚本
 └── start.py                            # 启动入口
 ```
 
@@ -198,40 +184,45 @@ async with QBittorrentClient(config) as client:
     await client.add_torrent(magnet_link, category)
 ```
 
-### API 合规客户端 (推荐)
+### qBittorrent 客户端示例
 
 ```python
-from qbittorrent_monitor.api_compliant_client import APIClient
+import asyncio
+from qbittorrent_monitor.config import ConfigManager
+from qbittorrent_monitor.qbittorrent_client import QBittorrentClient
 
-# 新的 100% API 合规客户端
-async with APIClient(config) as client:
-    # 添加种子
-    success = await client.add_torrent(
-        urls=magnet_link,
-        category="movie",
-        paused=False
-    )
+async def main():
+    config = await ConfigManager().load_config()
+    async with QBittorrentClient(config.qbittorrent, config) as client:
+        await client.add_torrent(
+            urls="magnet:?xt=urn:btih:...",
+            category="movies",
+            paused=False,
+        )
+        torrents = await client.get_torrents()
+        for torrent in torrents:
+            print(torrent["name"], torrent["state"])
 
-    # 获取种子列表
-    torrents = await client.get_torrents_info()
-
-    # 批量操作
-    await client.pause_torrents([hash1, hash2])
-    await client.resume_torrents([hash3, hash4])
+asyncio.run(main())
 ```
 
-### 本地处理器
+### 剪贴板监控器示例
 
 ```python
-from qbittorrent_monitor.local_processor import LocalClipboardProcessor
+import asyncio
+from qbittorrent_monitor.config import ConfigManager
+from qbittorrent_monitor.qbittorrent_client import QBittorrentClient
+from qbittorrent_monitor.clipboard_monitor import ClipboardMonitor
 
-# 本地内容处理 - 不涉及 API
-processor = LocalClipboardProcessor()
-result = processor.process_clipboard_content(clipboard_content)
+async def run_monitor():
+    manager = ConfigManager()
+    config = await manager.load_config()
+    async with QBittorrentClient(config.qbittorrent, config) as client:
+        monitor = ClipboardMonitor(client, config)
+        await monitor.start()
 
-if result:
-    print(f"发现磁力链接: {result.magnet_link}")
-    print(f"内容类型: {result.content_type.value}")
+# Ctrl+C 停止监控
+asyncio.run(run_monitor())
 ```
 
 ## 🧪 测试说明
@@ -239,25 +230,21 @@ if result:
 ### 运行测试
 
 ```bash
-# API 合规性测试
-python test_api_compliance.py
+# 安装依赖
+scripts/setup_dev.sh
 
-# 集成测试
-python -m pytest tests/test_integration.py -v
+# 运行全部测试
+scripts/run_tests.sh
 
-# 性能测试
-python -m pytest tests/test_performance.py -v
+# 或按目录运行
+scripts/run_tests.sh tests/unit
+scripts/run_tests.sh tests/integration
 ```
 
-### 合规性验证
-
-```bash
-# 验证所有操作都通过官方 API
-python test_api_compliance.py
-
-# 检查合规性评分
-# ≥90%: 企业级 | ≥80%: 生产级 | ≥70%: 需改进
-```
+### 开发者提示
+- `scripts/setup_dev.sh`：一次性安装项目与开发依赖。
+- `scripts/run_tests.sh`：包装 `python3 -m pytest -v`，可传入任意 pytest 参数。
+- 仍可直接运行 `python start.py` 启动剪贴板监控，也可引用 `ClipboardMonitor`/`WebCrawler` 组合做自定义自动化。
 
 ## 📊 性能指标
 

@@ -5,6 +5,7 @@ annotated-types==0.7.0
 anyio==4.9.0
 attrs==25.3.0
 beautifulsoup4==4.12.3
+colorama>=0.4.6
 certifi==2025.4.26
 crawl4ai>=0.6.3
 distro==1.9.0

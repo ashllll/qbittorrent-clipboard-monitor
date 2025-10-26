@@ -95,7 +95,7 @@ export DEEPSEEK_API_KEY=your_deepseek_api_key_here
 
 ##### 路径映射配置
 
-如果您使用Docker或NAS，可能需要配置路径映射：
+如果您使用 NAS，可能需要配置路径映射：
 
 ```json
 {

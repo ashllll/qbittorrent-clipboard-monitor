@@ -24,8 +24,10 @@ from crawl4ai.extraction_strategy import LLMExtractionStrategy, CosineStrategy
 from .config import AppConfig
 from .qbittorrent_client import QBittorrentClient
 from .ai_classifier import AIClassifier
-from .utils import NotificationManager, parse_magnet, validate_magnet_link
+from .notifications import NotificationManager
+from .utils import parse_magnet, validate_magnet_link
 from .exceptions import CrawlerError
+from .resilience import RateLimiter, CircuitBreaker, LRUCache, MetricsTracker
 
 
 @dataclass
@@ -61,6 +63,46 @@ class CrawlerStats:
         return self.cache_hits / total if total > 0 else 0.0
 
 
+class CrawlerResourcePool:
+    def __init__(self, max_size: int, config: AppConfig, logger: logging.Logger):
+        self.max_size = max_size
+        self.config = config
+        self.logger = logger
+        self._pool: List[AsyncWebCrawler] = []
+        self._semaphore = asyncio.Semaphore(max_size)
+
+    async def acquire(self) -> AsyncWebCrawler:
+        async with self._semaphore:
+            if self._pool:
+                return self._pool.pop()
+            crawler = AsyncWebCrawler(
+                headless=True,
+                browser_type="chromium",
+                verbose=False,
+                delay_before_return_html=2.0,
+                js_code=[
+                    "window.scrollTo(0, document.body.scrollHeight);",
+                    "await new Promise(resolve => setTimeout(resolve, 1000));"
+                ]
+            )
+            await crawler.start()
+            return crawler
+
+    async def release(self, crawler: AsyncWebCrawler):
+        if len(self._pool) < self.max_size:
+            self._pool.append(crawler)
+        else:
+            await crawler.close()
+
+    async def close_all(self):
+        while self._pool:
+            crawler = self._pool.pop()
+            try:
+                await crawler.close()
+            except Exception as exc:
+                self.logger.warning(f"关闭爬虫实例时出错: {exc}")
+
+
 class WebCrawler:
     """基于 crawl4ai 的网页爬虫类"""
     
@@ -75,27 +117,27 @@ class WebCrawler:
         
         # 连接池配置
         self._connection_pool_size = getattr(config.web_crawler, 'connection_pool_size', 5)
-        self._crawler_pool: List[AsyncWebCrawler] = []
-        self._pool_semaphore = asyncio.Semaphore(self._connection_pool_size)
+        self._resource_pool = CrawlerResourcePool(self._connection_pool_size, config, self.logger)
         
         # 缓存系统
-        self._cache: Dict[str, Tuple[Any, datetime]] = {}
-        self._cache_max_size = getattr(config.web_crawler, 'cache_max_size', 1000)
-        self._cache_ttl = getattr(config.web_crawler, 'cache_ttl_seconds', 3600)  # 1小时
+        cache_size = getattr(config.web_crawler, 'cache_max_size', 1000)
+        cache_ttl = getattr(config.web_crawler, 'cache_ttl_seconds', 3600)
+        self._cache = LRUCache(max_size=cache_size, ttl_seconds=cache_ttl)
         
         # 性能监控
         self._performance_stats = CrawlerStats()
+        self._metrics = MetricsTracker()
         
         # 断路器配置
-        self._circuit_breaker_threshold = getattr(config.web_crawler, 'circuit_breaker_threshold', 5)
-        self._circuit_breaker_recovery_timeout = getattr(config.web_crawler, 'circuit_breaker_recovery_seconds', 300)  # 5分钟
-        self._circuit_breaker_failures = 0
-        self._circuit_breaker_last_failure = None
-        self._circuit_breaker_state = 'closed'  # closed, open, half-open
+        self._circuit_breaker = CircuitBreaker(
+            failure_threshold=getattr(config.web_crawler, 'circuit_breaker_threshold', 5),
+            recovery_timeout=getattr(config.web_crawler, 'circuit_breaker_recovery_seconds', 300),
+            on_state_change=self._on_circuit_state_change,
+        )
         
         # 速率限制
         self._rate_limit_requests = getattr(config.web_crawler, 'max_requests_per_minute', 60)
-        self._rate_limit_window = deque(maxlen=self._rate_limit_requests)
+        self._rate_limiter = RateLimiter(self._rate_limit_requests)
         
         # 线程池执行器
         self._thread_pool = ThreadPoolExecutor(max_workers=4)
@@ -117,31 +159,10 @@ class WebCrawler:
         self.processed_hashes: Set[str] = set()
     
     async def _get_crawler_from_pool(self) -> AsyncWebCrawler:
-        """从连接池获取爬虫实例"""
-        async with self._pool_semaphore:
-            if self._crawler_pool:
-                return self._crawler_pool.pop()
-            
-            # 创建新的爬虫实例
-            crawler = AsyncWebCrawler(
-                headless=True,
-                browser_type="chromium",
-                verbose=False,
-                delay_before_return_html=2.0,
-                js_code=[
-                    "window.scrollTo(0, document.body.scrollHeight);",
-                    "await new Promise(resolve => setTimeout(resolve, 1000));"
-                ]
-            )
-            await crawler.start()
-            return crawler
+        return await self._resource_pool.acquire()
     
     async def _return_crawler_to_pool(self, crawler: AsyncWebCrawler):
-        """将爬虫实例返回连接池"""
-        if len(self._crawler_pool) < self._connection_pool_size:
-            self._crawler_pool.append(crawler)
-        else:
-            await crawler.close()
+        await self._resource_pool.release(crawler)
     
     def _get_cache_key(self, url: str, **kwargs) -> str:
         """生成缓存键"""
@@ -149,79 +170,43 @@ class WebCrawler:
         return hashlib.md5(key_data.encode()).hexdigest()
     
     def _get_from_cache(self, cache_key: str) -> Optional[Any]:
-        """从缓存获取数据"""
-        if cache_key in self._cache:
-            data, timestamp = self._cache[cache_key]
-            if datetime.now() - timestamp < timedelta(seconds=self._cache_ttl):
-                self._performance_stats.cache_hits += 1
-                return data
-            else:
-                # 缓存过期，删除
-                del self._cache[cache_key]
-        
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            self._performance_stats.cache_hits += 1
+            return cached
         self._performance_stats.cache_misses += 1
         return None
     
     def _put_to_cache(self, cache_key: str, data: Any):
-        """将数据放入缓存"""
-        # 如果缓存已满，删除最旧的条目
-        if len(self._cache) >= self._cache_max_size:
-            oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k][1])
-            del self._cache[oldest_key]
-        
-        self._cache[cache_key] = (data, datetime.now())
-    
-    def _cleanup_cache(self):
-        """清理过期的缓存条目"""
-        now = datetime.now()
-        expired_keys = [
-            key for key, (_, timestamp) in self._cache.items()
-            if now - timestamp >= timedelta(seconds=self._cache_ttl)
-        ]
-        for key in expired_keys:
-            del self._cache[key]
+        self._cache.set(cache_key, data)
     
     def _check_rate_limit(self) -> bool:
         """检查是否超过速率限制"""
-        now = time.time()
-        # 清理超过1分钟的请求记录
-        while self._rate_limit_window and now - self._rate_limit_window[0] > 60:
-            self._rate_limit_window.popleft()
-        
-        if len(self._rate_limit_window) >= self._rate_limit_requests:
+        allowed = self._rate_limiter.allow()
+        if not allowed:
             self._performance_stats.rate_limit_hits += 1
-            return False
-        
-        self._rate_limit_window.append(now)
-        return True
+        return allowed
+    
+    def _on_circuit_state_change(self, state: str):
+        if state == 'open':
+            self._performance_stats.circuit_breaker_trips += 1
+            self.logger.warning("Crawler circuit breaker opened")
+        elif state == 'half_open':
+            self.logger.info("Crawler circuit breaker half-open")
+        elif state == 'closed':
+            self.logger.info("Crawler circuit breaker closed")
     
     def _check_circuit_breaker(self) -> bool:
         """检查断路器状态"""
-        if self._circuit_breaker_state == 'closed':
-            return True
-        elif self._circuit_breaker_state == 'open':
-            if (self._circuit_breaker_last_failure and 
-                time.time() - self._circuit_breaker_last_failure > self._circuit_breaker_recovery_timeout):
-                self._circuit_breaker_state = 'half-open'
-                return True
-            return False
-        else:  # half-open
-            return True
+        return self._circuit_breaker.allow()
     
     def _record_success(self):
         """记录成功请求"""
-        if self._circuit_breaker_state == 'half-open':
-            self._circuit_breaker_state = 'closed'
-            self._circuit_breaker_failures = 0
+        self._circuit_breaker.record_success()
     
     def _record_failure(self):
         """记录失败请求"""
-        self._circuit_breaker_failures += 1
-        self._circuit_breaker_last_failure = time.time()
-        
-        if self._circuit_breaker_failures >= self._circuit_breaker_threshold:
-            self._circuit_breaker_state = 'open'
-            self._performance_stats.circuit_breaker_trips += 1
+        self._circuit_breaker.record_failure()
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """获取性能统计信息"""
@@ -233,10 +218,10 @@ class WebCrawler:
             'avg_response_time': self._performance_stats.get_avg_response_time(),
             'errors': self._performance_stats.errors,
             'circuit_breaker_trips': self._performance_stats.circuit_breaker_trips,
-            'circuit_breaker_state': self._circuit_breaker_state,
+            'circuit_breaker_state': self._circuit_breaker.state,
             'rate_limit_hits': self._performance_stats.rate_limit_hits,
             'cache_size': len(self._cache),
-            'pool_size': len(self._crawler_pool)
+            'pool_size': self._connection_pool_size
         }
     
     async def cleanup(self):
@@ -249,12 +234,7 @@ class WebCrawler:
             
             try:
                 # 关闭连接池中的所有爬虫
-                while self._crawler_pool:
-                    crawler = self._crawler_pool.pop()
-                    try:
-                        await crawler.close()
-                    except Exception as e:
-                        self.logger.warning(f"关闭爬虫实例时出错: {e}")
+                await self._resource_pool.close_all()
                 self.logger.debug("爬虫连接池已清理")
                 
                 # 清理缓存
@@ -289,25 +269,8 @@ class WebCrawler:
                 if hasattr(self, '_thread_pool') and self._thread_pool:
                     self._thread_pool.shutdown(wait=False)
                     
-                # 强制关闭爬虫实例（同步方式）
-                if hasattr(self, '_crawler_pool'):
-                    while self._crawler_pool:
-                        try:
-                            crawler = self._crawler_pool.pop()
-                            # 强制关闭爬虫实例
-                            if hasattr(crawler, '_browser_manager') and crawler._browser_manager:
-                                try:
-                                    # 尝试同步关闭浏览器
-                                    if hasattr(crawler._browser_manager, '_browser'):
-                                        browser = crawler._browser_manager._browser
-                                        if browser and hasattr(browser, 'close'):
-                                            # 这里无法使用await，但至少尝试触发关闭
-                                            pass
-                                except Exception:
-                                    pass
-                        except Exception:
-                            break
-                        
+                # 资源在 cleanup 中已处理
+                
             except Exception:
                 pass  # 忽略析构时的异常
     
@@ -331,13 +294,12 @@ class WebCrawler:
         if cached_result is not None:
             return cached_result
         
-        # 清理过期缓存
-        self._cleanup_cache()
-        
         start_time = time.time()
         crawler = None
         
         try:
+            self._metrics.inc('requests')
+            self._metrics.update_last_request_time(datetime.now().isoformat())
             # 从连接池获取爬虫
             crawler = await self._get_crawler_from_pool()
             
@@ -351,6 +313,7 @@ class WebCrawler:
             response_time = time.time() - start_time
             self._performance_stats.requests_made += 1
             self._performance_stats.response_times.append(response_time)
+            self._metrics.record_response(response_time)
             
             # 记录成功
             self._record_success()
@@ -364,6 +327,7 @@ class WebCrawler:
             # 记录失败
             self._record_failure()
             self._performance_stats.errors += 1
+            self._metrics.inc('errors')
             
             self.logger.error(f"Request failed for {url}: {str(e)}")
             raise CrawlerError(f"Failed to crawl {url}: {str(e)}") from e

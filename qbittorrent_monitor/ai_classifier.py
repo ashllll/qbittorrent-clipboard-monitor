@@ -14,10 +14,11 @@ import re
 import time
 import hashlib
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, Tuple
-from collections import defaultdict, OrderedDict
-from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse, unquote_plus
 from tenacity import (
     retry, 
     stop_after_attempt, 
@@ -29,6 +30,7 @@ from openai import OpenAI
 import openai
 
 from .config import DeepSeekConfig, CategoryConfig
+from .resilience import RateLimiter, CircuitBreaker, LRUCache
 from .exceptions import (
     AIError, AIApiError, AICreditError, AIRateLimitError, 
     ClassificationError
@@ -43,9 +45,11 @@ class BaseAIClassifier(ABC):
         self.logger = logging.getLogger(f'AIClassifier.{self.__class__.__name__}')
         
         # 缓存系统
-        self._cache: OrderedDict[str, Tuple[str, datetime]] = OrderedDict()
-        self._cache_max_size = getattr(config, 'cache_max_size', 1000)
         self._cache_ttl = getattr(config, 'cache_ttl_hours', 24)
+        self._cache = LRUCache(
+            max_size=getattr(config, 'cache_max_size', 1000),
+            ttl_seconds=int(self._cache_ttl * 3600),
+        )
         
         # 清理状态标志
         self._is_cleaned_up = False
@@ -67,8 +71,8 @@ class BaseAIClassifier(ABC):
         self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="AIClassifier")
         
         # 速率限制
-        self._rate_limiter = defaultdict(list)  # provider -> [timestamp, ...]
         self._max_requests_per_minute = getattr(config, 'max_requests_per_minute', 60)
+        self._rate_limiters: Dict[str, RateLimiter] = {}
     
     def _get_cache_key(self, torrent_name: str, categories_hash: str) -> str:
         """生成缓存键"""
@@ -86,59 +90,24 @@ class BaseAIClassifier(ABC):
     
     def _get_from_cache(self, cache_key: str) -> Optional[str]:
         """从缓存获取结果"""
-        if cache_key in self._cache:
-            result, timestamp = self._cache[cache_key]
-            # 检查是否过期
-            if datetime.now() - timestamp < timedelta(hours=self._cache_ttl):
-                # 移到最后（LRU）
-                self._cache.move_to_end(cache_key)
-                self._stats['cache_hits'] += 1
-                return result
-            else:
-                # 过期，删除
-                del self._cache[cache_key]
-        
+        result = self._cache.get(cache_key)
+        if result is not None:
+            self._stats['cache_hits'] += 1
+            return result
         self._stats['cache_misses'] += 1
         return None
     
     def _put_to_cache(self, cache_key: str, result: str):
         """存储到缓存"""
-        # 清理过期项
-        self._cleanup_cache()
-        
-        # 如果缓存满了，删除最旧的项
-        if len(self._cache) >= self._cache_max_size:
-            self._cache.popitem(last=False)
-        
-        self._cache[cache_key] = (result, datetime.now())
-    
-    def _cleanup_cache(self):
-        """清理过期的缓存项"""
-        now = datetime.now()
-        expired_keys = [
-            key for key, (_, timestamp) in self._cache.items()
-            if now - timestamp >= timedelta(hours=self._cache_ttl)
-        ]
-        for key in expired_keys:
-            del self._cache[key]
+        self._cache.set(cache_key, result)
     
     def _check_rate_limit(self, provider: str) -> bool:
         """检查速率限制"""
-        now = time.time()
-        minute_ago = now - 60
-        
-        # 清理旧的时间戳
-        self._rate_limiter[provider] = [
-            ts for ts in self._rate_limiter[provider] if ts > minute_ago
-        ]
-        
-        # 检查是否超过限制
-        if len(self._rate_limiter[provider]) >= self._max_requests_per_minute:
-            return False
-        
-        # 记录当前请求
-        self._rate_limiter[provider].append(now)
-        return True
+        limiter = self._rate_limiters.get(provider)
+        if limiter is None:
+            limiter = RateLimiter(self._max_requests_per_minute)
+            self._rate_limiters[provider] = limiter
+        return limiter.allow()
     
     def get_stats(self) -> Dict[str, Any]:
         """获取性能统计"""
@@ -245,14 +214,11 @@ class DeepSeekClassifier(BaseAIClassifier):
         # 清理状态标志
         self._is_cleaned_up = False
         
-        # 断路器状态
-        self._circuit_breaker = {
-            'failure_count': 0,
-            'last_failure_time': None,
-            'state': 'closed',  # closed, open, half_open
-            'failure_threshold': 5,
-            'recovery_timeout': 300  # 5分钟
-        }
+        self._circuit_breaker = CircuitBreaker(
+            failure_threshold=getattr(config, 'failure_threshold', 5),
+            recovery_timeout=getattr(config, 'recovery_timeout', 300),
+            on_state_change=lambda state: self.logger.info(f"断路器状态 -> {state}"),
+        )
         
         if config.api_key:
             try:
@@ -285,36 +251,15 @@ class DeepSeekClassifier(BaseAIClassifier):
     
     def _check_circuit_breaker(self) -> bool:
         """检查断路器状态"""
-        now = time.time()
-        
-        if self._circuit_breaker['state'] == 'open':
-            # 检查是否可以尝试恢复
-            if (self._circuit_breaker['last_failure_time'] and 
-                now - self._circuit_breaker['last_failure_time'] > self._circuit_breaker['recovery_timeout']):
-                self._circuit_breaker['state'] = 'half_open'
-                self.logger.info("断路器进入半开状态，尝试恢复")
-                return True
-            return False
-        
-        return True
+        return self._circuit_breaker.allow()
     
     def _record_success(self):
         """记录成功请求"""
-        if self._circuit_breaker['state'] == 'half_open':
-            self._circuit_breaker['state'] = 'closed'
-            self._circuit_breaker['failure_count'] = 0
-            self.logger.info("断路器恢复到关闭状态")
-        elif self._circuit_breaker['failure_count'] > 0:
-            self._circuit_breaker['failure_count'] = max(0, self._circuit_breaker['failure_count'] - 1)
+        self._circuit_breaker.record_success()
     
     def _record_failure(self):
         """记录失败请求"""
-        self._circuit_breaker['failure_count'] += 1
-        self._circuit_breaker['last_failure_time'] = time.time()
-        
-        if self._circuit_breaker['failure_count'] >= self._circuit_breaker['failure_threshold']:
-            self._circuit_breaker['state'] = 'open'
-            self.logger.warning(f"断路器打开，失败次数: {self._circuit_breaker['failure_count']}")
+        self._circuit_breaker.record_failure()
     
     def _is_available(self) -> bool:
         """检查服务是否可用"""
@@ -383,30 +328,66 @@ class DeepSeekClassifier(BaseAIClassifier):
         """带重试机制的分类方法"""
         try:
             prompt = self._build_prompt(torrent_name, categories)
-            
-            completion = await asyncio.to_thread(
-                self.client.chat.completions.create,
-                model=self.config.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是一个专业的种子分类助手，擅长根据文件名进行准确分类。请只返回最合适的分类名称，不要包含任何其他解释或文字。"
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                timeout=self.config.timeout
-            )
-            
-            if completion.choices and completion.choices[0].message:
-                raw_category = completion.choices[0].message.content
-                if raw_category:
-                    category = raw_category.strip().lower()
-                    self.logger.info(f"AI分类结果: {torrent_name[:50]}... -> {category}")
-                    return category
-                    
+
+            def _stream_completion():
+                response = self.client.chat.completions.create(
+                    model=self.config.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "你是一个专业的种子分类助手，擅长根据文件名进行准确分类。请只返回最合适的分类名称，不要包含任何其他解释或文字。"
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    stream=True,
+                    timeout=self.config.timeout
+                )
+
+                reasoning_chunks = []
+                content_chunks = []
+                for chunk in response:
+                    delta = chunk.choices[0].delta
+                    reasoning_piece = getattr(delta, 'reasoning_content', None)
+                    if reasoning_piece:
+                        reasoning_chunks.append(reasoning_piece)
+                    content_piece = getattr(delta, 'content', None)
+                    if content_piece:
+                        content_chunks.append(content_piece)
+                return ''.join(reasoning_chunks), ''.join(content_chunks)
+
+            try:
+                reasoning_text, final_text = await asyncio.to_thread(_stream_completion)
+            except TypeError:
+                completion = await asyncio.to_thread(
+                    self.client.chat.completions.create,
+                    model=self.config.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "你是一个专业的种子分类助手，擅长根据文件名进行准确分类。请只返回最合适的分类名称，不要包含任何其他解释或文字。"
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    timeout=self.config.timeout
+                )
+                reasoning_text = ""
+                final_text = completion.choices[0].message.content if completion.choices and completion.choices[0].message else ""
+
+            if reasoning_text:
+                self.logger.debug(f"AI思考轨迹: {reasoning_text[:200]}")
+
+            raw_category = (final_text or reasoning_text).strip()
+            if raw_category:
+                category = raw_category.lower()
+                self.logger.info(f"AI分类结果: {torrent_name[:50]}... -> {category}")
+                return category
+
             raise AIApiError("AI返回空响应")
             
         except openai.RateLimitError as e:
@@ -435,18 +416,21 @@ class DeepSeekClassifier(BaseAIClassifier):
             for name, cfg in categories.items()
         ])
         
-        # 构建关键词提示
-        category_keywords = "\n".join([
-            f"- {name} 关键词: {', '.join(cfg.keywords + (cfg.foreign_keywords or []))}" 
-            for name, cfg in categories.items() 
-            if cfg.keywords or cfg.foreign_keywords
-        ])
+        # 构建关键词提示（每个分类最多3个关键词）
+        keyword_lines = []
+        for name, cfg in categories.items():
+            keywords = (cfg.keywords or [])[:3]
+            foreign = (cfg.foreign_keywords or [])[:1]
+            merged = [k for k in (keywords + foreign) if k]
+            if merged:
+                keyword_lines.append(f"- {name}: {', '.join(merged)}")
+        category_keywords = "\n".join(keyword_lines)
         
-        # 构建Few-shot示例
+        # 构建Few-shot示例（仅保留前2个）
         few_shot_examples = ""
         if self.config.few_shot_examples:
             examples = []
-            for example in self.config.few_shot_examples:
+            for example in self.config.few_shot_examples[:2]:
                 examples.append(f"示例: '{example['torrent_name']}' -> {example['category']}")
             few_shot_examples = "参考示例:\n" + "\n".join(examples) + "\n"
         
@@ -510,8 +494,8 @@ class DeepSeekClassifier(BaseAIClassifier):
             stats['min_response_time'] = min(self._response_times)
         
         # 断路器状态
-        stats['circuit_breaker_state'] = self._circuit_breaker['state']
-        stats['circuit_breaker_failures'] = self._circuit_breaker['failure_count']
+        stats['circuit_breaker_state'] = self._circuit_breaker.state
+        stats['circuit_breaker_failures'] = self._circuit_breaker.failure_count
         
         # 连接池状态
         stats['connection_pool_size'] = len(self._client_pool)
@@ -523,79 +507,94 @@ class DeepSeekClassifier(BaseAIClassifier):
         """增强的规则引擎分类"""
         if not torrent_name:
             return "other"
-        
-        self.logger.info(f"使用规则引擎分类: {torrent_name}")
-        name_lower = torrent_name.lower()
-        
-        # 预定义的正则表达式模式
-        patterns = {
-            'tv_episode': re.compile(r's\d+e\d+|season\s+\d+|episode\s+\d+|\d+x\d+', re.IGNORECASE),
-            'movie_year': re.compile(r'\.(19|20)\d{2}\.|\((19|20)\d{2}\)|\[(19|20)\d{2}\]'),
-            'movie_quality': re.compile(r'1080p|720p|2160p|4k|uhd|bluray|web-?dl|hdtv', re.IGNORECASE),
-            'anime_fansub': re.compile(r'\[.*\].*\d+.*\[.*\]', re.IGNORECASE)  # [字幕组]标题[质量]格式
+
+        normalized_name = torrent_name
+        if torrent_name.lower().startswith("magnet:?"):
+            try:
+                query = parse_qs(urlparse(torrent_name).query)
+                dn = query.get("dn")
+                if dn:
+                    normalized_name = unquote_plus(dn[0])
+            except Exception:
+                normalized_name = torrent_name
+
+        name_lower = normalized_name.lower()
+        tokens = [tok for tok in re.split(r"[\s._\-\[\]\(\)]+", name_lower) if tok]
+        ext = Path(normalized_name).suffix.lower()
+
+        heuristics = {
+            "tv": {
+                "regex": [r"s\d{1,2}e\d{1,3}", r"season\s+\d+", r"episode\s+\d+", r"\d+x\d+"],
+                "keywords": ["hdtv", "web-dl", "complete", "miniseries", "hbo"],
+            },
+            "movies": {
+                "regex": [r"(19|20)\d{2}", r"1080p|720p|2160p|4k|uhd", r"bluray|hdrip|brrip|remux"],
+                "keywords": ["dvdrip", "webrip", "imax", "criterion", "camrip"],
+            },
+            "anime": {
+                "regex": [r"\[[^\]]+\][^\[]+\[[^\]]+\]", r"\bfansub\b", r"\banime\b"],
+                "keywords": ["bdrip", "jp", "zhsub", "bangumi", "ona", "tv tokyo"],
+            },
+            "adult": {
+                "regex": [r"\b(jav|fc2|uncensored|18\+)\b"],
+                "keywords": ["xxx", "porn", "brazzers", "realitykings", "x-art", "sapphic"],
+            },
+            "music": {
+                "extensions": [".flac", ".mp3", ".aac", ".alac", ".wav"],
+                "keywords": ["lossless", "320kbps", "discography", "album", "ep", "mtv"],
+            },
+            "games": {
+                "regex": [r"fitgirl", r"repack", r"codex", r"skidrow"],
+                "keywords": ["pc game", "switch", "ps5", "gog", "emu", "steam"],
+                "extensions": [".iso", ".nsp", ".xci", ".pkg"],
+            },
+            "software": {
+                "regex": [r"crack", r"patch", r"license"],
+                "keywords": ["installer", "portable", "x64", "activation", "keygen"],
+                "extensions": [".iso", ".dmg", ".exe", ".msi"],
+            },
         }
-        
-        category_scores = {}
-        
-        # 基于模式的加分
-        if patterns['tv_episode'].search(name_lower):
-            category_scores['tv'] = category_scores.get('tv', 0) + 8
-            
-        if patterns['movie_year'].search(name_lower) or patterns['movie_quality'].search(name_lower):
-            category_scores['movies'] = category_scores.get('movies', 0) + 6
-            
-        if patterns['anime_fansub'].search(torrent_name):
-            category_scores['anime'] = category_scores.get('anime', 0) + 7
-        
-        # 基于分类规则的评分
+
+        category_scores: Dict[str, float] = {}
+
+        def add_score(cat: str, value: float):
+            if value:
+                category_scores[cat] = category_scores.get(cat, 0.0) + value
+
+        for cat, rules in heuristics.items():
+            for pattern in rules.get("regex", []):
+                if re.search(pattern, name_lower):
+                    add_score(cat, 5)
+            for kw in rules.get("keywords", []):
+                if kw in name_lower or kw in tokens:
+                    add_score(cat, 3)
+            if ext and ext in rules.get("extensions", []):
+                add_score(cat, 4)
+
         for cat_name, cat_config in categories.items():
             score = 0
-            matched_items = []
-            
-            # 处理增强规则
             if cat_config.rules:
                 for rule in cat_config.rules:
-                    rule_score = self._apply_rule(rule, torrent_name, name_lower)
-                    if rule_score > 0:
-                        score += rule_score
-                        matched_items.append(f"{rule.get('type', 'unknown')}(+{rule_score})")
-                    elif rule_score < 0:
-                        # 应用排除规则
-                        score += rule_score  # 负分
-                        
-            # 处理传统关键词
+                    score += self._apply_rule(rule, normalized_name, name_lower)
             for keyword in cat_config.keywords:
                 if keyword.lower() in name_lower:
                     score += 2
-                    matched_items.append(f"{keyword}(+2)")
-            
-            # 处理外语关键词
             if cat_config.foreign_keywords:
                 for keyword in cat_config.foreign_keywords:
                     if keyword.lower() in name_lower:
                         score += 3
-                        matched_items.append(f"{keyword}(+3)")
-            
-            # 应用优先级权重
             if score > 0:
-                weighted_score = score * (1 + cat_config.priority * 0.1)
-                category_scores[cat_name] = category_scores.get(cat_name, 0) + weighted_score
-                
-                if matched_items:
-                    self.logger.info(f"{cat_name} 匹配: {', '.join(matched_items)}, 权重分数: {weighted_score:.1f}")
-        
-        # 选择最高分的分类
+                weighted = score * (1 + cat_config.priority * 0.05)
+                add_score(cat_name, weighted)
+
         if category_scores:
-            # 过滤掉负分的分类
-            positive_scores = {k: v for k, v in category_scores.items() if v > 0}
-            if positive_scores:
-                best_category = max(positive_scores.items(), key=lambda x: x[1])[0]
-                scores_display = ", ".join([f"{k}: {v:.1f}" for k, v in positive_scores.items()])
-                self.logger.info(f"规则引擎分类结果: {best_category} (所有分数: {scores_display})")
-                return best_category
-        
+            positive = {k: v for k, v in category_scores.items() if v > 0}
+            if positive:
+                return max(positive.items(), key=lambda x: x[1])[0]
+
         self.logger.info("规则引擎未找到匹配，返回 'other'")
         return "other"
+
     
     def _apply_rule(self, rule: Dict[str, Any], original_name: str, lower_name: str) -> int:
         """应用单个规则"""
@@ -696,13 +695,11 @@ class OpenAIClassifier(BaseAIClassifier):
         self.current_client_index = 0
         
         # 熔断器配置
-        self.circuit_breaker = {
-            'state': 'closed',  # closed, open, half_open
-            'failure_count': 0,
-            'failure_threshold': getattr(config, 'failure_threshold', 5),
-            'recovery_timeout': getattr(config, 'recovery_timeout', 60),
-            'last_failure_time': None
-        }
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=getattr(config, 'failure_threshold', 5),
+            recovery_timeout=getattr(config, 'recovery_timeout', 60),
+            on_state_change=self._on_cb_state_change,
+        )
         
         # 性能统计
         self.openai_stats = {
@@ -729,42 +726,26 @@ class OpenAIClassifier(BaseAIClassifier):
         self.openai_stats['pool_rotations'] += 1
         return client
     
+    def _on_cb_state_change(self, state: str):
+        if state == 'open':
+            self.openai_stats['circuit_breaker_trips'] += 1
+            self.logger.warning("熔断器触发，进入打开状态")
+        elif state == 'half_open':
+            self.logger.info("熔断器进入半开状态")
+        elif state == 'closed':
+            self.logger.info("熔断器恢复到关闭状态")
+
     def _check_circuit_breaker(self) -> bool:
         """检查熔断器状态"""
-        cb = self.circuit_breaker
-        
-        if cb['state'] == 'closed':
-            return True
-        elif cb['state'] == 'open':
-            if cb['last_failure_time'] and \
-               time.time() - cb['last_failure_time'] > cb['recovery_timeout']:
-                cb['state'] = 'half_open'
-                self.logger.info("熔断器进入半开状态")
-                return True
-            return False
-        elif cb['state'] == 'half_open':
-            return True
-        
-        return False
+        return self.circuit_breaker.allow()
     
     def _record_success(self):
         """记录成功请求"""
-        cb = self.circuit_breaker
-        if cb['state'] == 'half_open':
-            cb['state'] = 'closed'
-            cb['failure_count'] = 0
-            self.logger.info("熔断器恢复到关闭状态")
+        self.circuit_breaker.record_success()
     
     def _record_failure(self):
         """记录失败请求"""
-        cb = self.circuit_breaker
-        cb['failure_count'] += 1
-        cb['last_failure_time'] = time.time()
-        
-        if cb['failure_count'] >= cb['failure_threshold'] and cb['state'] != 'open':
-            cb['state'] = 'open'
-            self.openai_stats['circuit_breaker_trips'] += 1
-            self.logger.warning(f"熔断器触发，失败次数: {cb['failure_count']}")
+        self.circuit_breaker.record_failure()
     
     def _is_available(self) -> bool:
         """检查服务是否可用"""
@@ -775,16 +756,6 @@ class OpenAIClassifier(BaseAIClassifier):
         if not torrent_name or not torrent_name.strip():
             self.logger.warning("种子名称为空，返回默认分类")
             return "other"
-        
-        # 检查缓存
-        categories_hash = self._get_categories_hash(categories)
-        cache_key = self._get_cache_key(torrent_name, categories_hash)
-        cached_result = self._get_from_cache(cache_key)
-        if cached_result:
-            self._stats['cache_hits'] += 1
-            return cached_result
-        
-        self._stats['cache_misses'] += 1
         
         # 检查服务可用性
         if not self._is_available():
@@ -797,7 +768,6 @@ class OpenAIClassifier(BaseAIClassifier):
             return self._rule_based_classify(torrent_name, categories)
         
         start_time = time.time()
-        self._stats['total_requests'] += 1
         self.openai_stats['total_requests'] += 1
         
         try:
@@ -806,14 +776,9 @@ class OpenAIClassifier(BaseAIClassifier):
             
             # 记录成功
             response_time = time.time() - start_time
-            self._stats['response_times'].append(response_time)
             self.openai_stats['response_times'].append(response_time)
-            self._stats['successful_requests'] += 1
             self.openai_stats['successful_requests'] += 1
             self._record_success()
-            
-            # 缓存结果
-            self._put_to_cache(cache_key, result)
             
             return result
             
@@ -929,8 +894,8 @@ class OpenAIClassifier(BaseAIClassifier):
                 min(self.openai_stats['response_times'])
                 if self.openai_stats['response_times'] else 0
             ),
-            'circuit_breaker_state': self.circuit_breaker['state'],
-            'circuit_breaker_failures': self.circuit_breaker['failure_count'],
+            'circuit_breaker_state': self.circuit_breaker.state,
+            'circuit_breaker_failures': self.circuit_breaker.failure_count,
             'circuit_breaker_trips': self.openai_stats['circuit_breaker_trips'],
             'connection_pool_size': len(self.clients),
             'pool_rotations': self.openai_stats['pool_rotations']
