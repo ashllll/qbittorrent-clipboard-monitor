@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}RSS订阅管理{% endblock %}
+
+{% block content %}
+<div id="rss">
+    <van-nav-bar title="RSS订阅管理" left-arrow @click-left="$router.back()" />
+
+    <div class="main-content">
+        <!-- 总体统计 -->
+        <van-cell-group title="总体统计">
+            <van-cell title="总源数" :value="stats.total_sources" />
+            <van-cell title="活跃源" :value="stats.active_sources" />
+            <van-cell title="总项目" :value="stats.total_items" />
+            <van-cell title="已下载" :value="stats.downloaded_items" />
+            <van-cell title="已跳过" :value="stats.skipped_items" />
+            <van-cell title="最后检查" :value="formatTime(stats.last_check_time)" />
+        </van-cell-group>
+
+        <!-- 操作按钮 -->
+        <van-cell-group title="操作" style="margin-top: 10px;">
+            <van-cell title="强制检查所有源" @click="forceCheckAll" />
+            <van-cell title="添加RSS源" @click="showAddDialog = true" />
+            <van-cell title="导出配置" @click="exportConfig" />
+            <van-cell title="导入配置" @click="showImportDialog = true" />
+        </van-cell-group>
+
+        <!-- RSS源列表 -->
+        <van-cell-group title="RSS源" style="margin-top: 10px;">
+            <van-cell v-if="sources.length === 0" title="暂无RSS源" />
+            <van-cell
+                v-for="source in sources"
+                :key="source.name"
+                :title="source.name"
+                :label="source.url"
+                :value="source.enabled ? '已启用' : '已禁用'"
+                :value-class="source.enabled ? 'success-text' : 'error-text'"
+                is-link
+                @click="toggleSource(source)"
+            >
+                <template #right-icon>
+                    <van-switch :value="source.enabled" size="20px" @change="(val) => updateSource(source, {enabled: val})" />
+                </template>
+            </van-cell>
+        </van-cell-group>
+
+        <!-- 最近项目 -->
+        <van-cell-group title="最近项目" style="margin-top: 10px;">
+            <van-cell v-if="recentItems.length === 0" title="暂无项目" />
+            <van-cell
+                v-for="item in recentItems"
+                :key="item.id"
+                :title="item.title"
+                :label="item.source + ' - ' + formatTime(item.pub_date)"
+                :value="getStatusText(item.download_status)"
+                :value-class="getStatusClass(item.download_status)"
+            >
+                <template #right-icon>
+                    <van-tag v-if="item.filtered" type="warning">已过滤</van-tag>
+                    <van-tag v-else-if="item.has_magnet" type="success">有磁链</van-tag>
+                </template>
+            </van-cell>
+        </van-cell-group>
+    </div>
+
+    <!-- 添加RSS源对话框 -->
+    <van-dialog
+        v-model:show="showAddDialog"
+        title="添加RSS源"
+        show-cancel-button
+        @confirm="addSource"
+    >
+        <div style="padding: 20px;">
+            <van-field v-model="newSource.name" label="名称" placeholder="请输入RSS源名称" />
+            <van-field v-model="newSource.url" label="URL" placeholder="请输入RSS源URL" />
+            <van-field v-model="newSource.category" label="分类" placeholder="默认: rss" />
+            <van-field v-model.number="newSource.check_interval" label="检查间隔(秒)" type="number" placeholder="默认: 1800" />
+            <van-cell title="启用下载" :value-class="newSource.download_enabled ? 'success-text' : 'error-text'">
+                <template #right-icon>
+                    <van-switch v-model="newSource.download_enabled" size="20px" />
+                </template>
+            </van-cell>
+        </div>
+    </van-dialog>
+
+    <!-- 导入配置对话框 -->
+    <van-dialog
+        v-model:show="showImportDialog"
+        title="导入配置"
+        show-cancel-button
+        @confirm="importConfig"
+    >
+        <div style="padding: 20px;">
+            <van-field
+                v-model="importConfigText"
+                type="textarea"
+                placeholder="请输入配置 YAML 格式"
+                rows="10"
+                autosize
+            />
+        </div>
+    </van-dialog>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+Vue.createApp({
+    ...Vue.options.components,
+    extends: Vue.options,
+    data() {
+        return {
+            stats: {
+                total_sources: 0,
+                active_sources: 0,
+                total_items: 0,
+                downloaded_items: 0,
+                skipped_items: 0,
+                last_check_time: null
+            },
+            sources: [],
+            recentItems: [],
+            showAddDialog: false,
+            showImportDialog: false,
+            newSource: {
+                name: '',
+                url: '',
+                category: 'rss',
+                check_interval: 1800,
+                download_enabled: true
+            },
+            importConfigText: ''
+        }
+    },
+    methods: {
+        async loadStats() {
+            try {
+                const response = await axios.get('/api/rss/stats');
+                if (response.data.success) {
+                    this.stats = response.data.data;
+                }
+            } catch (e) {
+                console.error('加载RSS统计失败:', e);
+            }
+        },
+        async loadSources() {
+            try {
+                const response = await axios.get('/api/rss/sources');
+                if (response.data.success) {
+                    this.sources = response.data.data;
+                }
+            } catch (e) {
+                console.error('加载RSS源失败:', e);
+            }
+        },
+        async loadRecentItems() {
+            try {
+                const response = await axios.get('/api/rss/items');
+                if (response.data.success) {
+                    this.recentItems = response.data.data;
+                }
+            } catch (e) {
+                console.error('加载最近项目失败:', e);
+            }
+        },
+        async forceCheckAll() {
+            Vue.prototype.$toast.loading('正在检查所有源...');
+            try {
+                const response = await axios.post('/api/rss/check-all');
+                if (response.data.success) {
+                    Vue.prototype.$toast.success('检查完成');
+                    this.loadStats();
+                    this.loadRecentItems();
+                }
+            } catch (e) {
+                console.error('强制检查失败:', e);
+                Vue.prototype.$toast.fail('检查失败');
+            }
+        },
+        async addSource() {
+            try {
+                const response = await axios.post('/api/rss/sources', this.newSource);
+                if (response.data.success) {
+                    Vue.prototype.$toast.success('添加成功');
+                    this.showAddDialog = false;
+                    this.newSource = {
+                        name: '',
+                        url: '',
+                        category: 'rss',
+                        check_interval: 1800,
+                        download_enabled: true
+                    };
+                    this.loadSources();
+                    this.loadStats();
+                }
+            } catch (e) {
+                console.error('添加RSS源失败:', e);
+                Vue.prototype.$toast.fail('添加失败');
+            }
+        },
+        async updateSource(source, updates) {
+            try {
+                const response = await axios.put(`/api/rss/sources/${encodeURIComponent(source.name)}`, updates);
+                if (response.data.success) {
+                    this.loadSources();
+                    this.loadStats();
+                }
+            } catch (e) {
+                console.error('更新RSS源失败:', e);
+                Vue.prototype.$toast.fail('更新失败');
+            }
+        },
+        async toggleSource(source) {
+            await this.updateSource(source, { enabled: !source.enabled });
+        },
+        async exportConfig() {
+            try {
+                const response = await axios.get('/api/rss/config/export');
+                if (response.data.success) {
+                    const config = response.data.data;
+                    const configStr = JSON.stringify(config, null, 2);
+                    const blob = new Blob([configStr], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'rss_config.json';
+                    link.click();
+                    URL.revokeObjectURL(url);
+                    Vue.prototype.$toast.success('配置已导出');
+                }
+            } catch (e) {
+                console.error('导出配置失败:', e);
+                Vue.prototype.$toast.fail('导出失败');
+            }
+        },
+        async importConfig() {
+            try {
+                const config = JSON.parse(this.importConfigText);
+                const response = await axios.post('/api/rss/config/import', config);
+                if (response.data.success) {
+                    Vue.prototype.$toast.success('配置已导入');
+                    this.showImportDialog = false;
+                    this.importConfigText = '';
+                    this.loadSources();
+                    this.loadStats();
+                }
+            } catch (e) {
+                console.error('导入配置失败:', e);
+                Vue.prototype.$toast.fail('导入失败：' + e.message);
+            }
+        },
+        formatTime(timestamp) {
+            if (!timestamp) return '未检查';
+            return new Date(timestamp).toLocaleString();
+        },
+        getStatusText(status) {
+            const statusMap = {
+                'pending': '等待中',
+                'downloaded': '已下载',
+                'skipped': '已跳过',
+                'failed': '失败'
+            };
+            return statusMap[status] || status;
+        },
+        getStatusClass(status) {
+            const classMap = {
+                'pending': 'info-text',
+                'downloaded': 'success-text',
+                'skipped': 'warning-text',
+                'failed': 'error-text'
+            };
+            return classMap[status] || '';
+        }
+    },
+    mounted() {
+        this.loadStats();
+        this.loadSources();
+        this.loadRecentItems();
+
+        // 每30秒刷新一次
+        this.refreshInterval = setInterval(() => {
+            this.loadStats();
+            this.loadRecentItems();
+        }, 30000);
+    },
+    unmounted() {
+        if (this.refreshInterval) {
+            clearInterval(this.refreshInterval);
+        }
+    }
+}).mount('#rss');
+</script>
+{% endblock %}

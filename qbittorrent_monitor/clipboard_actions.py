@@ -12,6 +12,8 @@ from typing import Callable, Dict, Any, Optional
 from .clipboard_models import TorrentRecord
 from .exceptions import TorrentParseError
 from .utils import parse_magnet, validate_magnet_link
+from .intelligent_filter import get_intelligent_filter, FilterAction
+from .workflow_engine import get_workflow_engine
 
 
 class ClipboardActionExecutor:
@@ -34,6 +36,8 @@ class ClipboardActionExecutor:
         self.stats = stats
         self._add_history = add_history
         self.logger = logger or logging.getLogger("ClipboardActionExecutor")
+        # 初始化智能过滤器
+        self.intelligent_filter = get_intelligent_filter()
 
     async def handle_magnet(self, magnet_link: str):
         process_start = time.time()
@@ -45,9 +49,78 @@ class ClipboardActionExecutor:
             return
 
         try:
-            torrent_hash, torrent_name = parse_magnet(magnet_link)
+            # 先尝试解析磁力链接获取基本信息
+            torrent_hash, temp_name = parse_magnet(magnet_link)
             if not torrent_hash:
                 raise TorrentParseError("无法解析磁力链接哈希值")
+
+            # 使用临时名称进行智能过滤（如果需要获取真实名称，先添加种子）
+            filter_title = temp_name or f"未命名_{torrent_hash[:8]}"
+
+            # 执行智能过滤检查
+            try:
+                filter_result = await self.intelligent_filter.filter_content(
+                    title=filter_title,
+                    magnet_link=magnet_link,
+                    seeders=self.stats.get('last_seeders', 0),
+                    leechers=self.stats.get('last_leechers', 0),
+                    category="other"
+                )
+
+                # 检查过滤结果
+                if not filter_result.allowed:
+                    self.logger.warning(
+                        f"🚫 智能过滤阻止: {filter_title[:50]}... "
+                        f"原因: {', '.join(filter_result.reasons)}"
+                    )
+                    self.stats['filtered_out'] += 1
+                    return
+
+                # 记录质量分数和标签
+                if filter_result.score > 0:
+                    self.logger.info(
+                        f"✨ 质量评分: {filter_result.score:.1f}分 "
+                        f"({filter_result.quality_level.value}) "
+                        f"{' '.join(filter_result.tags[:3])}"
+                    )
+                    self.stats['total_quality_score'] = (
+                        self.stats.get('total_quality_score', 0) + filter_result.score
+                    )
+                    self.stats['avg_quality_score'] = (
+                        self.stats['total_quality_score'] /
+                        max(1, self.stats.get('total_processed', 0))
+                    )
+
+            except Exception as filter_error:
+                self.logger.warning(f"智能过滤失败，跳过过滤: {filter_error}")
+                # 过滤失败不阻止处理，继续后续流程
+
+            # 获取工作流引擎并处理
+            workflow_engine = get_workflow_engine()
+            if workflow_engine:
+                try:
+                    workflow_result = await workflow_engine.process_torrent(
+                        title=filter_title,
+                        magnet_link=magnet_link,
+                        size=filter_result.size if 'filter_result' in locals() else None,
+                        seeders=filter_result.seeders if 'filter_result' in locals() else 0,
+                        leechers=filter_result.leechers if 'filter_result' in locals() else 0,
+                        category="other"
+                    )
+
+                    if workflow_result.get("success"):
+                        self.logger.info(
+                            f"⚙️ 工作流处理完成: {filter_title[:50]}... "
+                            f"质量:{workflow_result.get('quality_score', 0):.1f} "
+                            f"规则匹配:{workflow_result.get('matched_rules', [])}"
+                        )
+                        self.stats['workflows_triggered'] = self.stats.get('workflows_triggered', 0) + 1
+                    else:
+                        self.logger.warning(f"工作流处理失败: {workflow_result.get('error')}")
+
+                except Exception as workflow_error:
+                    self.logger.warning(f"工作流引擎错误: {workflow_error}")
+                    # 工作流失败不阻止处理，继续后续流程
 
             if await self.qbt._is_duplicate(torrent_hash):
                 self.logger.info(f"⚠️ 跳过重复种子: {torrent_hash[:8]}")
@@ -55,6 +128,7 @@ class ClipboardActionExecutor:
                 return
 
             temp_added = False
+            torrent_name = temp_name
             if not torrent_name:
                 self.logger.info("📥 磁力链接缺少文件名，先添加种子以获取真实名称...")
                 if not await self.qbt.add_torrent(magnet_link, "other"):

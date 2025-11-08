@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{% endblock %} - qBittorrent剪贴板监控器</title>
+
+    <!-- CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/vant@2/lib/index.css" rel="stylesheet">
+    <link href="/static/css/style.css" rel="stylesheet">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div id="app">
+        <van-nav-bar
+            :title="title"
+            left-arrow
+            @click-left="goBack"
+        />
+
+        <div class="main-content">
+            {% block content %}{% endblock %}
+        </div>
+
+        <van-tabbar v-model="activeTab" @change="onTabChange">
+            <van-tabbar-item icon="desktop-o" to="/">控制台</van-tabbar-item>
+            <van-tabbar-item icon="orders-o" to="/torrents">种子</van-tabbar-item>
+            <van-tabbar-item icon="bar-chart-o" to="/stats">统计</van-tabbar-item>
+            <van-tabbar-item icon="description" to="/workflow">工作流</van-tabbar-item>
+            <van-tabbar-item icon="newspaper-o" to="/rss">RSS</van-tabbar-item>
+            <van-tabbar-item icon="setting-o" to="/settings">设置</van-tabbar-item>
+        </van-tabbar>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vant@2/lib/vant.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5"></script>
+
+    <script>
+        const { NavBar, Tabbar, TabbarItem, Button, Cell, CellGroup, Dialog, Toast, PullRefresh, List, Card, Tag } = vant;
+
+        Vue.createApp({
+            components: {
+                [NavBar.name]: NavBar,
+                [Tabbar.name]: Tabbar,
+                [TabbarItem.name]: TabbarItem,
+                [Button.name]: Button,
+                [Cell.name]: Cell,
+                [CellGroup.name]: CellGroup,
+                [Dialog.name]: Dialog,
+                [Toast.name]: Toast,
+                [PullRefresh.name]: PullRefresh,
+                [List.name]: List,
+                [Card.name]: Card,
+                [Tag.name]: Tag
+            },
+            data() {
+                return {
+                    activeTab: 0,
+                    title: '{% block page_title %}{% endblock %}'
+                }
+            },
+            methods: {
+                goBack() {
+                    history.back();
+                },
+                onTabChange(index) {
+                    const routes = ['/', '/torrents', '/stats', '/workflow', '/rss', '/settings'];
+                    if (window.location.pathname !== routes[index]) {
+                        window.location.href = routes[index];
+                    }
+                }
+            },
+            mounted() {
+                // WebSocket连接
+                this.initWebSocket();
+            },
+            methods: {
+                ...this.methods,
+                initWebSocket() {
+                    const ws = new WebSocket(`ws://${window.location.host}/ws`);
+
+                    ws.onopen = () => {
+                        console.log('WebSocket已连接');
+                    };
+
+                    ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleWebSocketMessage(data);
+                        } catch (e) {
+                            console.error('WebSocket消息解析失败:', e);
+                        }
+                    };
+
+                    ws.onclose = () => {
+                        console.log('WebSocket已断开，3秒后重连');
+                        setTimeout(() => this.initWebSocket(), 3000);
+                    };
+
+                    ws.onerror = (error) => {
+                        console.error('WebSocket错误:', error);
+                    };
+
+                    this.ws = ws;
+                },
+                handleWebSocketMessage(data) {
+                    if (data.type === 'stats_update') {
+                        this.$emit('stats-update', data.data);
+                    }
+                }
+            }
+        }).use(vant).mount('#app');
+    </script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

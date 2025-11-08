@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}工作流管理{% endblock %}
+
+{% block content %}
+<div id="workflow">
+    <van-nav-bar title="工作流管理" left-arrow @click-left="$router.back()" />
+
+    <div class="main-content">
+        <!-- 工作流引擎状态 -->
+        <van-cell-group title="引擎状态">
+            <van-cell title="状态" :value="engineStatus.running ? '运行中' : '已停止'" :value-class="engineStatus.running ? 'success-text' : 'error-text'" />
+            <van-cell title="总执行数" :value="engineStatus.total_executions" />
+            <van-cell title="成功执行" :value="engineStatus.successful_executions" />
+            <van-cell title="失败执行" :value="engineStatus.failed_executions" />
+            <van-cell title="成功率" :value="engineStatus.success_rate + '%'" />
+        </van-cell-group>
+
+        <!-- 规则引擎统计 -->
+        <van-cell-group title="规则引擎" style="margin-top: 10px;">
+            <van-cell title="总规则数" :value="ruleStats.total_rules" />
+            <van-cell title="启用规则" :value="ruleStats.enabled_rules" />
+            <van-cell title="总执行次数" :value="ruleStats.total_executions" />
+            <van-cell title="成功匹配" :value="ruleStats.successful_matches" />
+            <van-cell title="匹配率" :value="ruleStats.match_rate + '%'" />
+        </van-cell-group>
+
+        <!-- 批处理器统计 -->
+        <van-cell-group title="批处理器" style="margin-top: 10px;">
+            <van-cell title="总批次数" :value="batchStats.total_batches" />
+            <van-cell title="已处理批次" :value="batchStats.processed_batches" />
+            <van-cell title="总项目数" :value="batchStats.total_items" />
+            <van-cell title="已处理项目" :value="batchStats.processed_items" />
+        </van-cell-group>
+
+        <!-- 最近执行记录 -->
+        <van-cell-group title="最近执行" style="margin-top: 10px;">
+            <van-cell v-if="recentExecutions.length === 0" title="暂无执行记录" />
+            <van-cell
+                v-for="execution in recentExecutions"
+                :key="execution.id"
+                :title="execution.name"
+                :label="'开始时间: ' + formatTime(execution.started_at)"
+                :value="getStatusText(execution.status)"
+                :value-class="getStatusClass(execution.status)"
+            />
+        </van-cell-group>
+
+        <!-- 操作按钮 -->
+        <van-cell-group title="操作" style="margin-top: 10px;">
+            <van-cell title="刷新统计" @click="loadWorkflowStats" />
+            <van-cell title="导出规则" @click="exportRules" />
+            <van-cell title="导入规则" @click="showImportDialog = true" />
+        </van-cell-group>
+    </div>
+
+    <!-- 导入规则对话框 -->
+    <van-dialog
+        v-model:show="showImportDialog"
+        title="导入规则"
+        show-cancel-button
+        @confirm="importRules"
+    >
+        <div style="padding: 20px;">
+            <van-field
+                v-model="importRulesText"
+                type="textarea"
+                placeholder="请输入规则 JSON 格式"
+                rows="10"
+                autosize
+            />
+        </div>
+    </van-dialog>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+Vue.createApp({
+    ...Vue.options.components,
+    extends: Vue.options,
+    data() {
+        return {
+            engineStatus: {
+                running: false,
+                total_executions: 0,
+                successful_executions: 0,
+                failed_executions: 0,
+                success_rate: 0
+            },
+            ruleStats: {
+                total_rules: 0,
+                enabled_rules: 0,
+                total_executions: 0,
+                successful_matches: 0,
+                match_rate: 0
+            },
+            batchStats: {
+                total_batches: 0,
+                processed_batches: 0,
+                total_items: 0,
+                processed_items: 0
+            },
+            recentExecutions: [],
+            showImportDialog: false,
+            importRulesText: ''
+        }
+    },
+    methods: {
+        async loadWorkflowStats() {
+            try {
+                // TODO: 调用工作流统计API
+                const response = await axios.get('/api/workflow/stats');
+                if (response.data.success) {
+                    const stats = response.data.data;
+                    this.engineStatus = stats.workflow_engine || this.engineStatus;
+                    this.ruleStats = stats.rule_engine || this.ruleStats;
+                    this.batchStats = stats.batch_processor || this.batchStats;
+                }
+            } catch (e) {
+                console.error('加载工作流统计失败:', e);
+                Vue.prototype.$toast.fail('加载统计失败');
+            }
+        },
+        async exportRules() {
+            try {
+                // TODO: 调用导出规则API
+                const response = await axios.get('/api/workflow/rules/export');
+                if (response.data.success) {
+                    const rules = response.data.data;
+                    const dataStr = JSON.stringify(rules, null, 2);
+                    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+                    const url = URL.createObjectURL(dataBlob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'workflow_rules.json';
+                    link.click();
+                    URL.revokeObjectURL(url);
+                    Vue.prototype.$toast.success('规则已导出');
+                }
+            } catch (e) {
+                console.error('导出规则失败:', e);
+                Vue.prototype.$toast.fail('导出失败');
+            }
+        },
+        async importRules() {
+            try {
+                const rules = JSON.parse(this.importRulesText);
+                // TODO: 调用导入规则API
+                const response = await axios.post('/api/workflow/rules/import', {rules});
+                if (response.data.success) {
+                    Vue.prototype.$toast.success('规则导入成功');
+                    this.showImportDialog = false;
+                    this.importRulesText = '';
+                    this.loadWorkflowStats();
+                }
+            } catch (e) {
+                console.error('导入规则失败:', e);
+                Vue.prototype.$toast.fail('导入失败：' + e.message);
+            }
+        },
+        formatTime(timestamp) {
+            return new Date(timestamp).toLocaleString();
+        },
+        getStatusText(status) {
+            const statusMap = {
+                'pending': '待执行',
+                'running': '执行中',
+                'completed': '已完成',
+                'failed': '失败',
+                'skipped': '跳过',
+                'cancelled': '取消'
+            };
+            return statusMap[status] || status;
+        },
+        getStatusClass(status) {
+            const classMap = {
+                'pending': 'info-text',
+                'running': 'info-text',
+                'completed': 'success-text',
+                'failed': 'error-text',
+                'skipped': 'warning-text',
+                'cancelled': 'warning-text'
+            };
+            return classMap[status] || '';
+        }
+    },
+    mounted() {
+        this.loadWorkflowStats();
+        // 每30秒刷新一次统计
+        this.refreshInterval = setInterval(this.loadWorkflowStats, 30000);
+    },
+    unmounted() {
+        if (this.refreshInterval) {
+            clearInterval(this.refreshInterval);
+        }
+    }
+}).mount('#workflow');
+</script>
+{% endblock %}
