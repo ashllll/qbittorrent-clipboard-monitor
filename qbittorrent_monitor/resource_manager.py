@@ -360,7 +360,8 @@ class AsyncResourcePool(BaseAsyncResource):
             if hasattr(resource, '_closed'):
                 return not resource._closed
             return True
-        except:
+        except Exception:
+            logger.debug("检查资源状态失败，返回未关闭")
             return False
 
     async def _destroy_resource(self, resource: Any) -> None:

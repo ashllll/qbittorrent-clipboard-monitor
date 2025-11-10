@@ -126,7 +126,8 @@ class EnhancedLRUCache:
             else:
                 # 对于复杂对象，使用估算
                 return 1024
-        except:
+        except Exception:
+            logger.debug(f"估算对象大小失败，使用默认值: {type(obj)}")
             return 256  # 默认估算值
 
     async def get(self, key: str) -> Optional[Any]:

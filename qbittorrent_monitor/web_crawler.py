@@ -34,82 +34,13 @@ from .utils import parse_magnet, validate_magnet_link
 from .exceptions import CrawlerError
 from .resilience import RateLimiter, CircuitBreaker, LRUCache, MetricsTracker
 
+# 拆分到子模块 - 保持向后兼容
+from .crawler.torrent_info import TorrentInfo
+from .crawler.crawler_stats import CrawlerStats
+from .crawler.resource_pool import CrawlerResourcePool
 
-@dataclass
-class TorrentInfo:
-    """种子信息数据类"""
-    title: str
-    detail_url: str
-    magnet_link: str = ""
-    size: str = ""
-    seeders: int = 0
-    leechers: int = 0
-    category: str = ""
-    status: str = "pending"  # pending, extracted, added, failed, duplicate
-    
-@dataclass
-class CrawlerStats:
-    """爬虫性能统计"""
-    requests_made: int = 0
-    cache_hits: int = 0
-    cache_misses: int = 0
-    errors: int = 0
-    response_times: deque = field(default_factory=lambda: deque(maxlen=100))
-    circuit_breaker_trips: int = 0
-    rate_limit_hits: int = 0
-    
-    def get_avg_response_time(self) -> float:
-        """获取平均响应时间"""
-        return sum(self.response_times) / len(self.response_times) if self.response_times else 0.0
-    
-    def get_cache_hit_rate(self) -> float:
-        """获取缓存命中率"""
-        total = self.cache_hits + self.cache_misses
-        return self.cache_hits / total if total > 0 else 0.0
-
-
-class CrawlerResourcePool:
-    def __init__(self, max_size: int, config: AppConfig, logger: logging.Logger):
-        if not HAS_CRAWL4AI:
-            raise ImportError("crawl4ai module is not installed")
-
-        self.max_size = max_size
-        self.config = config
-        self.logger = logger
-        self._pool: List = []  # 使用List替代具体类型
-        self._semaphore = asyncio.Semaphore(max_size)
-
-    async def acquire(self):
-        async with self._semaphore:
-            if self._pool:
-                return self._pool.pop()
-            crawler = AsyncWebCrawler(
-                headless=True,
-                browser_type="chromium",
-                verbose=False,
-                delay_before_return_html=2.0,
-                js_code=[
-                    "window.scrollTo(0, document.body.scrollHeight);",
-                    "await new Promise(resolve => setTimeout(resolve, 1000));"
-                ]
-            )
-            await crawler.start()
-            return crawler
-
-    async def release(self, crawler):
-        if len(self._pool) < self.max_size:
-            self._pool.append(crawler)
-        else:
-            await crawler.close()
-
-    async def close_all(self):
-        while self._pool:
-            crawler = self._pool.pop()
-            try:
-                await crawler.close()
-            except Exception as exc:
-                self.logger.warning(f"关闭爬虫实例时出错: {exc}")
-
+# 保持原有导入路径
+# TODO: 未来版本完全迁移到子模块
 
 class WebCrawler:
     """基于 crawl4ai 的网页爬虫类"""
