@@ -174,7 +174,7 @@
         "enabled": true,
         "console": {
             "enabled": true,
-            "colored": true,
+            "colored": false,
             "show_details": true,
             "show_statistics": true
         }

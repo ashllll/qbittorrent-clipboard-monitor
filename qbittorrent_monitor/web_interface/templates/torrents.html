@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}种子管理{% endblock %}
+
+{% block content %}
+<div id="torrents">
+    <van-pull-refresh v-model="loading" @refresh="onRefresh">
+        <van-list
+            v-model="loading"
+            :finished="finished"
+            finished-text="没有更多了"
+            @load="loadMore"
+        >
+            <div v-for="torrent in torrents" :key="torrent.hash" class="torrent-item">
+                <van-card>
+                    <template #title>
+                        <div class="torrent-title">
+                            [[ torrent.name ]]
+                        </div>
+                    </template>
+                    <template #desc>
+                        <div class="torrent-info">
+                            <p>
+                                <van-tag type="primary">[[ torrent.category || '未分类' ]]</van-tag>
+                                <van-tag v-if="torrent.state === 'downloading'" type="success">下载中</van-tag>
+                                <van-tag v-else-if="torrent.state === 'seeded'" type="success">做种中</van-tag>
+                                <van-tag v-else-if="torrent.state === 'paused'" type="warning">已暂停</van-tag>
+                                <van-tag v-else type="info">[[ torrent.state ]]</van-tag>
+                            </p>
+                            <p>大小: [[ formatSize(torrent.size) ]]</p>
+                            <p>进度: [[ (torrent.progress * 100).toFixed(1) ]]%</p>
+                            <p>下载速度: [[ formatSpeed(torrent.dlspeed) ]] |
+                               上传速度: [[ formatSpeed(torrent.upspeed) ]]</p>
+                            <p>做种: [[ torrent.num_seeds ]] |
+                               下载: [[ torrent.num_leechs ]]</p>
+                        </div>
+                    </template>
+                    <template #footer>
+                        <div class="torrent-actions">
+                            <van-button v-if="torrent.state !== 'paused'"
+                                      size="small"
+                                      type="warning"
+                                      @click="pauseTorrent(torrent.hash)">
+                                暂停
+                            </van-button>
+                            <van-button v-else
+                                      size="small"
+                                      type="primary"
+                                      @click="resumeTorrent(torrent.hash)">
+                                恢复
+                            </van-button>
+                            <van-button size="small"
+                                      type="danger"
+                                      @click="deleteTorrent(torrent.hash)">
+                                删除
+                            </van-button>
+                        </div>
+                    </template>
+                </van-card>
+            </div>
+        </van-list>
+    </van-pull-refresh>
+
+    <!-- 批量操作 -->
+    <van-floating-bubble icon="bars" @click="showBatchActions = true" />
+
+    <van-action-sheet
+        v-model:show="showBatchActions"
+        :actions="batchActions"
+        @select="onBatchSelect"
+        cancel-text="取消"
+    />
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { ref } = Vue;
+
+Vue.createApp({
+    ...Vue.options.components,
+    extends: Vue.options,
+    data() {
+        return {
+            loading: false,
+            finished: false,
+            torrents: [],
+            page: 0,
+            pageSize: 20,
+            showBatchActions: false,
+            batchActions: [
+                { name: '暂停所有', action: 'pause_all' },
+                { name: '恢复所有', action: 'resume_all' },
+                { name: '刷新', action: 'refresh' }
+            ]
+        }
+    },
+    methods: {
+        async onRefresh() {
+            this.page = 0;
+            this.torrents = [];
+            this.finished = false;
+            await this.loadMore();
+            this.loading = false;
+            Vue.prototype.$toast.success('刷新成功');
+        },
+        async loadMore() {
+            this.loading = true;
+            try {
+                const res = await axios.get('/api/torrents', {
+                    params: {
+                        page: this.page,
+                        size: this.pageSize
+                    }
+                });
+
+                if (res.data.success) {
+                    const newTorrents = res.data.data || [];
+                    this.torrents = this.page === 0 ? newTorrents : [...this.torrents, ...newTorrents];
+                    this.page++;
+
+                    if (newTorrents.length < this.pageSize) {
+                        this.finished = true;
+                    }
+                }
+            } catch (e) {
+                console.error('加载种子失败:', e);
+                Vue.prototype.$toast.fail('加载失败');
+            } finally {
+                this.loading = false;
+            }
+        },
+        async pauseTorrent(hash) {
+            try {
+                const res = await axios.post(`/api/torrents/${hash}/pause`);
+                if (res.data.success) {
+                    const torrent = this.torrents.find(t => t.hash === hash);
+                    if (torrent) {
+                        torrent.state = 'paused';
+                    }
+                    Vue.prototype.$toast.success('已暂停');
+                }
+            } catch (e) {
+                console.error('暂停失败:', e);
+                Vue.prototype.$toast.fail('暂停失败');
+            }
+        },
+        async resumeTorrent(hash) {
+            try {
+                const res = await axios.post(`/api/torrents/${hash}/resume`);
+                if (res.data.success) {
+                    const torrent = this.torrents.find(t => t.hash === hash);
+                    if (torrent) {
+                        torrent.state = 'downloading';
+                    }
+                    Vue.prototype.$toast.success('已恢复');
+                }
+            } catch (e) {
+                console.error('恢复失败:', e);
+                Vue.prototype.$toast.fail('恢复失败');
+            }
+        },
+        async deleteTorrent(hash) {
+            Vue.prototype.$dialog.confirm({
+                title: '确认删除',
+                message: '确定要删除这个种子吗？此操作不可撤销。',
+            }).then(async () => {
+                try {
+                    const res = await axios.delete(`/api/torrents/${hash}`);
+                    if (res.data.success) {
+                        this.torrents = this.torrents.filter(t => t.hash !== hash);
+                        Vue.prototype.$toast.success('已删除');
+                    }
+                } catch (e) {
+                    console.error('删除失败:', e);
+                    Vue.prototype.$toast.fail('删除失败');
+                }
+            }).catch(() => {});
+        },
+        formatSize(size) {
+            if (!size) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0;
+            let s = size;
+            while (s >= 1024 && i < units.length - 1) {
+                s /= 1024;
+                i++;
+            }
+            return `${s.toFixed(2)} ${units[i]}`;
+        },
+        formatSpeed(speed) {
+            if (!speed) return '0 B/s';
+            return this.formatSize(speed) + '/s';
+        },
+        onBatchSelect(action) {
+            this.showBatchActions = false;
+            if (action.action === 'refresh') {
+                this.onRefresh();
+            }
+            // TODO: 实现批量暂停/恢复
+        }
+    },
+    mounted() {
+        this.onRefresh();
+    }
+}).mount('#torrents');
+</script>
+
+<style scoped>
+.torrent-item {
+    margin-bottom: 10px;
+}
+
+.torrent-title {
+    font-weight: bold;
+    margin-bottom: 8px;
+    word-break: break-all;
+}
+
+.torrent-info p {
+    margin: 4px 0;
+    font-size: 13px;
+    color: #666;
+}
+
+.torrent-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.torrent-actions .van-button {
+    flex: 1;
+}
+
+.van-floating-bubble {
+    bottom: 80px;
+}
+</style>
+{% endblock %}

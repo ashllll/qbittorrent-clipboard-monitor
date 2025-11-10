@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-🚀 QBittorrent智能下载助手
+QBittorrent智能下载助手
 
 功能特性：
-- 🔍 自动监控剪贴板中的磁力链接和网页URL
-- 🧠 AI智能分类（支持DeepSeek）
-- 🕷️ 基于crawl4ai的网页爬虫批量下载
-- 📂 自动分类到不同目录
-- 🎯 支持XXXClub等种子网站
+- 自动监控剪贴板中的磁力链接和网页URL
+- AI智能分类（支持DeepSeek）
+- 基于crawl4ai的网页爬虫批量下载
+- 自动分类到不同目录
+- 支持XXXClub等种子网站
 
 使用方法：
     python start.py            # 启动监控
@@ -35,50 +35,21 @@ sys.path.insert(0, str(project_root))
 def install_dependencies():
     """检查并安装依赖"""
     print_step(0, "∞", "正在检查和安装依赖库...")
-    libs_dir = project_root / 'libs'
     requirements_path = project_root / 'requirements.txt'
 
     if not requirements_path.exists():
         print_error("错误: requirements.txt 文件未找到。")
         sys.exit(1)
-        
-    # 确保libs文件夹存在
-    libs_dir.mkdir(exist_ok=True)
 
     try:
-        # 检查是否所有包都已下载
-        with open(requirements_path, 'r') as f:
-            lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-        
-        missing_packages = False
-        for line in lines:
-            try:
-                # 解析包名
-                pkg_name = line.split('==')[0].split('>=')[0].split('<=')[0].split('<')[0].split('>')[0].strip()
-                # 这是一个简化的检查，可能不完全准确，但可以处理大部分情况
-                if not any(pkg_name.lower() in f.lower() for f in os.listdir(libs_dir)):
-                     missing_packages = True
-                     break
-            except Exception:
-                # 如果解析失败，则假定需要下载
-                missing_packages = True
-                break
-        
-        if missing_packages:
-            print_info("'libs' 文件夹中可能缺少依赖包，尝试从网络下载...")
-            subprocess.check_call([sys.executable, '-m', 'pip', 'download', '-r', str(requirements_path), '-d', str(libs_dir)])
-            print_success("依赖包已下载到 'libs' 文件夹。")
-
-        # 从libs文件夹离线安装
-        print_info("正在从 'libs' 文件夹安装/验证依赖...")
+        # 直接使用pip安装依赖
+        print_info("正在安装依赖包...")
         subprocess.check_call([
             sys.executable, '-m', 'pip', 'install',
-            '--no-index',
-            f'--find-links={str(libs_dir)}',
             '-r', str(requirements_path),
             '--break-system-packages'
         ])
-        print_success("所有依赖已成功安装/验证。")
+        print_success("所有依赖已成功安装。")
     except subprocess.CalledProcessError as e:
         print_error("依赖安装失败", e)
         print_info("请检查您的Python环境和pip设置。")
@@ -98,17 +69,17 @@ def print_step(step_num, total_steps, message):
 
 def print_error(message, error=None):
     """显示错误信息"""
-    print_with_flush(f"❌ {message}")
+    print_with_flush(f"[ERROR] {message}")
     if error:
         print_with_flush(f"   错误详情: {str(error)}")
 
 def print_success(message):
     """显示成功信息"""
-    print_with_flush(f"✅ {message}")
+    print_with_flush(f"[SUCCESS] {message}")
 
 def print_info(message):
     """显示信息"""
-    print_with_flush(f"💡 {message}")
+    print_with_flush(f"[INFO] {message}")
 
 def print_separator(char="=", length=60):
     """显示分隔线"""

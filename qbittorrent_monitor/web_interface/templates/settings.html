@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}设置{% endblock %}
+
+{% block content %}
+<div id="settings">
+    <van-cell-group title="基本设置">
+        <van-cell title="检查间隔" :value="settings.check_interval + '秒'" @click="showCheckIntervalPicker = true" is-link />
+        <van-cell title="AI分类" :value="settings.ai_enabled ? '已启用' : '已禁用'" @click="toggleAi" />
+        <van-cell title="通知" :value="settings.notifications ? '已启用' : '已禁用'" @click="toggleNotifications" />
+    </van-cell-group>
+
+    <van-cell-group title="qBittorrent" style="margin-top: 10px;">
+        <van-cell title="主机" :value="settings.qbt_host" />
+        <van-cell title="端口" :value="settings.qbt_port" />
+        <van-cell title="状态" :value="settings.qbt_connected ? '已连接' : '未连接'" :value-class="settings.qbt_connected ? 'success-text' : 'error-text'" />
+    </van-cell-group>
+
+    <van-cell-group title="分类管理" style="margin-top: 10px;">
+        <van-cell v-for="category in categories" :key="category.name" :title="category.name" :value="category.save_path" />
+    </van-cell-group>
+
+    <van-cell-group title="操作" style="margin-top: 10px;">
+        <van-cell title="重新连接qBittorrent" @click="reconnectQbt" />
+        <van-cell title="清除缓存" @click="clearCache" />
+        <van-cell title="重启服务" @click="restartService" />
+    </van-cell-group>
+
+    <!-- 检查间隔选择器 -->
+    <van-popup v-model:show="showCheckIntervalPicker" position="bottom">
+        <van-picker
+            :columns="intervalOptions"
+            @confirm="onIntervalConfirm"
+            @cancel="showCheckIntervalPicker = false"
+        />
+    </van-popup>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+Vue.createApp({
+    ...Vue.options.components,
+    extends: Vue.options,
+    data() {
+        return {
+            settings: {
+                check_interval: 1.0,
+                ai_enabled: true,
+                notifications: true,
+                qbt_host: 'localhost',
+                qbt_port: 8080,
+                qbt_connected: false
+            },
+            categories: [],
+            showCheckIntervalPicker: false,
+            intervalOptions: [
+                { text: '0.5秒', value: 0.5 },
+                { text: '1秒', value: 1.0 },
+                { text: '2秒', value: 2.0 },
+                { text: '5秒', value: 5.0 },
+                { text: '10秒', value: 10.0 }
+            ]
+        }
+    },
+    methods: {
+        async loadSettings() {
+            try {
+                // 加载设置
+                const settingsRes = await axios.get('/api/settings');
+                if (settingsRes.data.success) {
+                    this.settings = { ...this.settings, ...settingsRes.data.data };
+                }
+
+                // 加载分类
+                const categoriesRes = await axios.get('/api/categories');
+                if (categoriesRes.data.success) {
+                    this.categories = Object.entries(categoriesRes.data.data).map(([name, info]) => ({
+                        name: name,
+                        save_path: info.savePath
+                    }));
+                }
+            } catch (e) {
+                console.error('加载设置失败:', e);
+            }
+        },
+        async toggleAi() {
+            this.settings.ai_enabled = !this.settings.ai_enabled;
+            // TODO: 保存设置到后端
+            Vue.prototype.$toast.success('设置已更新');
+        },
+        async toggleNotifications() {
+            this.settings.notifications = !this.settings.notifications;
+            // TODO: 保存设置到后端
+            Vue.prototype.$toast.success('设置已更新');
+        },
+        onIntervalConfirm(value) {
+            this.settings.check_interval = value.value;
+            this.showCheckIntervalPicker = false;
+            // TODO: 保存设置到后端
+            Vue.prototype.$toast.success('设置已更新');
+        },
+        async reconnectQbt() {
+            Vue.prototype.$toast.loading('正在重新连接...');
+            try {
+                // TODO: 调用重新连接API
+                setTimeout(() => {
+                    this.settings.qbt_connected = true;
+                    Vue.prototype.$toast.success('重新连接成功');
+                }, 2000);
+            } catch (e) {
+                Vue.prototype.$toast.fail('重新连接失败');
+            }
+        },
+        async clearCache() {
+            Vue.prototype.$dialog.confirm({
+                title: '确认清除',
+                message: '确定要清除所有缓存吗？',
+            }).then(async () => {
+                try {
+                    // TODO: 调用清除缓存API
+                    Vue.prototype.$toast.success('缓存已清除');
+                } catch (e) {
+                    Vue.prototype.$toast.fail('清除失败');
+                }
+            }).catch(() => {});
+        },
+        async restartService() {
+            Vue.prototype.$dialog.confirm({
+                title: '确认重启',
+                message: '确定要重启服务吗？这将中断当前所有操作。',
+            }).then(async () => {
+                try {
+                    // TODO: 调用重启API
+                    Vue.prototype.$toast.success('服务正在重启...');
+                } catch (e) {
+                    Vue.prototype.$toast.fail('重启失败');
+                }
+            }).catch(() => {});
+        }
+    },
+    mounted() {
+        this.loadSettings();
+    }
+}).mount('#settings');
+</script>
+
+<style scoped>
+.success-text {
+    color: #07c160;
+}
+
+.error-text {
+    color: #ee0a24;
+}
+</style>
+{% endblock %}

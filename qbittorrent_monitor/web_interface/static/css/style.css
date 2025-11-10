@@ -1,0 +1,363 @@
+/* 全局样式 */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    background-color: #f7f8fa;
+    color: #333;
+}
+
+#app {
+    padding-bottom: 50px; /* 为底部导航栏留出空间 */
+}
+
+.main-content {
+    padding: 10px;
+}
+
+/* 卡片样式 */
+.van-card {
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.van-card__header {
+    padding: 12px;
+}
+
+.van-card__content {
+    padding: 0 12px 12px;
+}
+
+/* 导航栏样式 */
+.van-nav-bar {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.van-nav-bar__title {
+    color: white;
+    font-weight: bold;
+}
+
+.van-icon {
+    color: white;
+}
+
+/* 按钮样式 */
+.van-button--primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+}
+
+.van-button--success {
+    background: #07c160;
+    border: none;
+}
+
+.van-button--warning {
+    background: #ff976a;
+    border: none;
+}
+
+.van-button--danger {
+    background: #ee0a24;
+    border: none;
+}
+
+/* 标签样式 */
+.van-tag {
+    margin-right: 5px;
+}
+
+/* 状态卡片 */
+.status-cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+@media (min-width: 768px) {
+    .status-cards {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+.status-cards .van-card__title h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.status-cards .van-card__desc p {
+    margin: 5px 0;
+    font-size: 13px;
+    color: #666;
+}
+
+/* 统计卡片 */
+.overview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.overview-item {
+    text-align: center;
+    padding: 15px;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    border-radius: 8px;
+    transition: transform 0.2s;
+}
+
+.overview-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.overview-item .value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #667eea;
+    margin-bottom: 5px;
+}
+
+.overview-item .label {
+    font-size: 12px;
+    color: #666;
+}
+
+/* 种子列表 */
+.torrent-item {
+    margin-bottom: 10px;
+}
+
+.torrent-item .van-card {
+    margin: 0;
+}
+
+.torrent-title {
+    font-weight: bold;
+    font-size: 15px;
+    margin-bottom: 8px;
+    word-break: break-all;
+    color: #333;
+}
+
+.torrent-info {
+    margin: 8px 0;
+}
+
+.torrent-info p {
+    margin: 4px 0;
+    font-size: 13px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.torrent-info p .van-tag {
+    margin: 0;
+}
+
+.torrent-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.torrent-actions .van-button {
+    flex: 1;
+    height: 32px;
+    font-size: 13px;
+}
+
+/* 日志区域 */
+.log-container {
+    max-height: 300px;
+    overflow-y: auto;
+    background: #1e1e1e;
+    padding: 10px;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.log-item {
+    padding: 2px 0;
+    color: #d4d4d4;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.log-time {
+    color: #569cd6;
+    margin-right: 8px;
+}
+
+.log-message {
+    color: #d4d4d4;
+}
+
+/* 状态文本 */
+.success-text {
+    color: #07c160;
+    font-weight: 500;
+}
+
+.warning-text {
+    color: #ff976a;
+    font-weight: 500;
+}
+
+.error-text {
+    color: #ee0a24;
+    font-weight: 500;
+}
+
+.info-text {
+    color: #1989fa;
+    font-weight: 500;
+}
+
+/* 悬浮按钮 */
+.van-floating-bubble {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* 加载动画 */
+.van-loading {
+    margin: 20px auto;
+}
+
+/* 响应式设计 */
+@media (max-width: 480px) {
+    .main-content {
+        padding: 5px;
+    }
+
+    .torrent-actions {
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .torrent-actions .van-button {
+        width: 100%;
+    }
+}
+
+@media (min-width: 768px) {
+    .main-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .status-cards {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .torrent-item {
+        margin-bottom: 15px;
+    }
+}
+
+/* 深色模式支持 */
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+    }
+
+    .van-card {
+        background-color: #2d2d2d;
+        color: #d4d4d4;
+    }
+
+    .van-cell {
+        background-color: #2d2d2d;
+        color: #d4d4d4;
+    }
+
+    .torrent-title {
+        color: #d4d4d4;
+    }
+
+    .torrent-info p {
+        color: #999;
+    }
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.torrent-item {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* 工具提示 */
+.tooltip {
+    position: relative;
+    cursor: help;
+}
+
+.tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+    z-index: 1000;
+}
+
+.tooltip:hover::after {
+    opacity: 1;
+}

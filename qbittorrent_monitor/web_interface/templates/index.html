@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}控制台{% endblock %}
+
+{% block content %}
+<div id="console">
+    <!-- 状态卡片 -->
+    <van-pull-refresh v-model="loading" @refresh="onRefresh">
+        <div class="status-cards">
+            <van-card>
+                <template #thumb>
+                    <van-icon name="desktop-o" size="40" color="#1989fa"/>
+                </template>
+                <template #title>
+                    <h3>qBittorrent状态</h3>
+                </template>
+                <template #desc>
+                    <p v-if="healthData.overall === 'healthy'">
+                        <van-tag type="success">已连接</van-tag>
+                    </p>
+                    <p v-else-if="healthData.overall === 'warning'">
+                        <van-tag type="warning">警告</van-tag>
+                    </p>
+                    <p v-else>
+                        <van-tag type="danger">离线</van-tag>
+                    </p>
+                </template>
+            </van-card>
+
+            <van-card>
+                <template #thumb>
+                    <van-icon name="orders-o" size="40" color="#07c160"/>
+                </template>
+                <template #title>
+                    <h3>种子统计</h3>
+                </template>
+                <template #desc>
+                    <p>总计: {{ stats.total_torrents || 0 }}</p>
+                    <p>下载中: {{ stats.downloading || 0 }}</p>
+                    <p>已完成: {{ stats.seeding || 0 }}</p>
+                </template>
+            </van-card>
+
+            <van-card>
+                <template #thumb>
+                    <van-icon name="bar-chart-o" size="40" color="#ff976a"/>
+                </template>
+                <template #title>
+                    <h3>性能指标</h3>
+                </template>
+                <template #desc>
+                    <p>平均响应: {{ stats.avg_response_time || 0 }}ms</p>
+                    <p>错误率: {{ stats.error_rate || 0 }}%</p>
+                    <p>缓存命中: {{ stats.cache_hit_rate || 0 }}%</p>
+                </template>
+            </van-card>
+        </div>
+
+        <!-- 实时日志 -->
+        <van-card style="margin-top: 10px;">
+            <template #title>
+                <h3>实时日志</h3>
+            </template>
+            <template #desc>
+                <div class="log-container" ref="logContainer">
+                    <div v-for="(log, index) in recentLogs" :key="index" class="log-item">
+                        <span class="log-time">[[ log.time ]]</span>
+                        <span class="log-message">[[ log.message ]]</span>
+                    </div>
+                </div>
+            </template>
+        </van-card>
+    </van-pull-refresh>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { ref, onMounted } = Vue;
+
+Vue.createApp({
+    ...Vue.options.components,
+    extends: Vue.options,
+    data() {
+        return {
+            loading: false,
+            stats: {},
+            healthData: {},
+            recentLogs: []
+        }
+    },
+    methods: {
+        async onRefresh() {
+            await this.loadData();
+            this.loading = false;
+            Vue.prototype.$toast.success('刷新成功');
+        },
+        async loadData() {
+            try {
+                // 加载统计数据
+                const statsRes = await axios.get('/api/stats');
+                if (statsRes.data.success) {
+                    this.stats = statsRes.data.data;
+                }
+
+                // 加载健康状态
+                const healthRes = await axios.get('/api/health');
+                if (healthRes.data.success) {
+                    this.healthData = healthRes.data.data;
+                }
+            } catch (e) {
+                console.error('加载数据失败:', e);
+                Vue.prototype.$toast.fail('加载数据失败');
+            }
+        },
+        addLog(message) {
+            this.recentLogs.unshift({
+                time: new Date().toLocaleTimeString(),
+                message: message
+            });
+            if (this.recentLogs.length > 50) {
+                this.recentLogs = this.recentLogs.slice(0, 50);
+            }
+        }
+    },
+    mounted() {
+        this.loadData();
+
+        // 定时刷新
+        setInterval(() => {
+            this.loadData();
+        }, 5000);
+    },
+    events: {
+        'stats-update': function(data) {
+            this.stats = data;
+        }
+    }
+}).mount('#console');
+</script>
+
+<style scoped>
+.status-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+}
+
+.status-cards .van-card {
+    margin: 0;
+}
+
+.log-container {
+    max-height: 300px;
+    overflow-y: auto;
+    background: #f7f8fa;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.log-item {
+    padding: 2px 0;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.log-time {
+    color: #999;
+    margin-right: 5px;
+}
+
+.log-message {
+    color: #333;
+}
+</style>
+{% endblock %}

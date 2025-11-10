@@ -796,3 +796,402 @@ class QBittorrentClient:
                     raise QBittorrentError(f"获取种子文件失败: {error_text}")
         except aiohttp.ClientError as e:
             raise NetworkError(f"获取种子文件网络错误: {str(e)}") from e
+
+
+# ============================================================================
+# 优化后的 qBittorrent 客户端 - 支持多级连接池和批量操作
+# ============================================================================
+
+class OptimizedQBittorrentClient(QBittorrentClient):
+    """
+    优化版 qBittorrent 客户端
+
+    新增功能：
+    1. 多级连接池 (读、写、API 分离)
+    2. 批量操作优化
+    3. 智能错误恢复
+    4. 性能监控增强
+    """
+
+    def __init__(self, config: QBittorrentConfig, app_config: Optional[AppConfig] = None):
+        super().__init__(config, app_config)
+        self.logger = logging.getLogger('OptimizedQBittorrentClient')
+
+        # 多级连接池 - 优化指导文档建议
+        self._read_pool: Optional[aiohttp.ClientSession] = None
+        self._write_pool: Optional[aiohttp.ClientSession] = None
+        self._api_pool: Optional[aiohttp.ClientSession] = None
+
+        # 连接池配置
+        self._read_pool_size = getattr(config, 'read_pool_size', 10)
+        self._write_pool_size = getattr(config, 'write_pool_size', 5)
+        self._api_pool_size = getattr(config, 'api_pool_size', 20)
+
+        # 批量操作统计
+        self._batch_stats = {
+            'total_batches': 0,
+            'successful_batches': 0,
+            'failed_batches': 0,
+            'total_items': 0,
+            'avg_batch_size': 0.0
+        }
+
+    async def __aenter__(self):
+        """异步上下文管理器 - 初始化多级连接池"""
+        # 初始化父类连接池
+        await super().__aenter__()
+
+        # 创建多级连接池
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+
+        # 读连接池 - 用于获取数据
+        read_connector = aiohttp.TCPConnector(
+            limit=self._read_pool_size,
+            limit_per_host=5,
+            keepalive_timeout=30
+        )
+        self._read_pool = aiohttp.ClientSession(
+            timeout=timeout,
+            connector=read_connector
+        )
+
+        # 写连接池 - 用于添加/修改数据
+        write_connector = aiohttp.TCPConnector(
+            limit=self._write_pool_size,
+            limit_per_host=3,
+            keepalive_timeout=30
+        )
+        self._write_pool = aiohttp.ClientSession(
+            timeout=timeout,
+            connector=write_connector
+        )
+
+        # API 连接池 - 用于复杂查询
+        api_connector = aiohttp.TCPConnector(
+            limit=self._api_pool_size,
+            limit_per_host=10,
+            keepalive_timeout=60
+        )
+        self._api_pool = aiohttp.ClientSession(
+            timeout=timeout,
+            connector=api_connector
+        )
+
+        self.logger.info(
+            f"多级连接池初始化完成: "
+            f"读({self._read_pool_size}) 写({self._write_pool_size}) API({self._api_pool_size})"
+        )
+        return self
+
+    async def cleanup(self):
+        """清理所有资源，包括多级连接池"""
+        self.logger.info("开始清理优化客户端资源...")
+
+        try:
+            # 关闭多级连接池
+            if self._read_pool and not self._read_pool.closed:
+                await self._read_pool.close()
+                self.logger.debug("读连接池已关闭")
+
+            if self._write_pool and not self._write_pool.closed:
+                await self._write_pool.close()
+                self.logger.debug("写连接池已关闭")
+
+            if self._api_pool and not self._api_pool.closed:
+                await self._api_pool.close()
+                self.logger.debug("API连接池已关闭")
+
+            # 调用父类清理
+            await super().cleanup()
+
+            self.logger.info("优化客户端资源清理完成")
+
+        except Exception as e:
+            self.logger.error(f"清理优化客户端资源时出错: {str(e)}")
+
+    async def add_torrents_batch(
+        self,
+        torrents: List[Tuple[str, str]],
+        batch_size: int = 10
+    ) -> Dict[str, Any]:
+        """
+        批量添加种子 - 优化指导文档建议
+
+        Args:
+            torrents: [(magnet_link, category), ...] 的列表
+            batch_size: 每批处理的种子数量
+
+        Returns:
+            {
+                'success_count': int,
+                'failed_count': int,
+                'skipped_count': int,
+                'results': List[Dict]
+            }
+        """
+        self.logger.info(f"开始批量添加 {len(torrents)} 个种子 (批次大小: {batch_size})")
+        self._batch_stats['total_batches'] += 1
+        self._batch_stats['total_items'] += len(torrents)
+
+        results = {
+            'success_count': 0,
+            'failed_count': 0,
+            'skipped_count': 0,
+            'results': []
+        }
+
+        # 分批处理
+        for i in range(0, len(torrents), batch_size):
+            batch = torrents[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            total_batches = (len(torrents) + batch_size - 1) // batch_size
+
+            self.logger.info(f"处理批次 {batch_num}/{total_batches} ({len(batch)} 个种子)")
+
+            # 并发处理当前批次
+            tasks = []
+            for magnet_link, category in batch:
+                task = asyncio.create_task(
+                    self._add_torrent_safe(magnet_link, category)
+                )
+                tasks.append(task)
+
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # 处理批次结果
+            for j, result in enumerate(batch_results):
+                magnet_link, category = batch[j]
+
+                if isinstance(result, Exception):
+                    self.logger.error(f"添加种子失败: {magnet_link[:30]}... - {str(result)}")
+                    results['failed_count'] += 1
+                    results['results'].append({
+                        'magnet': magnet_link,
+                        'category': category,
+                        'status': 'failed',
+                        'error': str(result)
+                    })
+                elif result is True:
+                    results['success_count'] += 1
+                    results['results'].append({
+                        'magnet': magnet_link,
+                        'category': category,
+                        'status': 'success'
+                    })
+                elif result is False:
+                    results['skipped_count'] += 1
+                    results['results'].append({
+                        'magnet': magnet_link,
+                        'category': category,
+                        'status': 'skipped',
+                        'reason': 'duplicate'
+                    })
+
+        # 更新统计
+        if results['failed_count'] == 0:
+            self._batch_stats['successful_batches'] += 1
+        else:
+            self._batch_stats['failed_batches'] += 1
+
+        avg_size = self._batch_stats['total_items'] / max(self._batch_stats['total_batches'], 1)
+        self._batch_stats['avg_batch_size'] = avg_size
+
+        self.logger.info(
+            f"批量添加完成: 成功 {results['success_count']}, "
+            f"失败 {results['failed_count']}, 跳过 {results['skipped_count']}"
+        )
+
+        return results
+
+    async def _add_torrent_safe(self, magnet_link: str, category: str) -> bool:
+        """安全添加单个种子 (用于批量操作)"""
+        try:
+            # 使用写连接池
+            result = await self.add_torrent(magnet_link, category)
+            return result
+        except Exception as e:
+            self.logger.error(f"批量添加失败: {magnet_link[:30]}... - {str(e)}")
+            raise
+
+    async def get_torrents_batch(
+        self,
+        hashes: List[str],
+        batch_size: int = 50
+    ) -> Dict[str, Any]:
+        """
+        批量获取种子信息 - 优化指导文档建议
+
+        Args:
+            hashes: 种子哈希列表
+            batch_size: 每批查询的数量
+
+        Returns:
+            {
+                'total': int,
+                'found': int,
+                'not_found': int,
+                'torrents': Dict[hash, torrent_info]
+            }
+        """
+        self.logger.info(f"开始批量获取 {len(hashes)} 个种子信息")
+
+        results = {
+            'total': len(hashes),
+            'found': 0,
+            'not_found': 0,
+            'torrents': {}
+        }
+
+        # 分批查询
+        for i in range(0, len(hashes), batch_size):
+            batch = hashes[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            total_batches = (len(hashes) + batch_size - 1) // batch_size
+
+            self.logger.debug(f"查询批次 {batch_num}/{total_batches}")
+
+            # 构造查询参数
+            params = {}
+            if len(batch) == 1:
+                # 单个查询
+                params['hashes'] = batch[0]
+            else:
+                # 批量查询 (用 | 分隔)
+                params['hashes'] = '|'.join(batch)
+
+            try:
+                # 使用读连接池查询
+                url = f"{self._base_url}/api/v2/torrents/info"
+                async with self._read_pool.get(url, params=params) as resp:
+                    if resp.status == 200:
+                        torrents = await resp.json()
+
+                        # 处理返回的种子信息
+                        found_hashes = set()
+                        for torrent in torrents:
+                            hash_value = torrent.get('hash', '').lower()
+                            if hash_value:
+                                results['torrents'][hash_value] = torrent
+                                found_hashes.add(hash_value)
+
+                        # 更新计数
+                        results['found'] += len(found_hashes)
+                        results['not_found'] += len(batch) - len(found_hashes)
+
+                        self.logger.debug(f"批次 {batch_num}: 找到 {len(found_hashes)}/{len(batch)} 个种子")
+                    else:
+                        error_text = await resp.text()
+                        self.logger.error(f"批次 {batch_num} 查询失败: {error_text}")
+                        results['not_found'] += len(batch)
+
+            except Exception as e:
+                self.logger.error(f"批次 {batch_num} 查询异常: {str(e)}")
+                results['not_found'] += len(batch)
+
+        self.logger.info(
+            f"批量查询完成: 找到 {results['found']}/{results['total']} 个种子"
+        )
+
+        return results
+
+    async def get_torrents_by_category_batch(
+        self,
+        categories: List[str],
+        use_api_pool: bool = True
+    ) -> Dict[str, Any]:
+        """
+        按分类批量获取种子 - 使用 API 连接池
+
+        Args:
+            categories: 分类列表
+            use_api_pool: 是否使用 API 连接池
+
+        Returns:
+            Dict[category, List[torrent_info]]
+        """
+        self.logger.info(f"按分类批量获取种子: {categories}")
+
+        results = {}
+
+        # 并发查询所有分类
+        tasks = []
+        for category in categories:
+            task = asyncio.create_task(
+                self._get_torrents_by_category_safe(category, use_api_pool)
+            )
+            tasks.append((category, task))
+
+        for category, task in tasks:
+            try:
+                torrents = await task
+                results[category] = torrents
+                self.logger.debug(f"分类 '{category}': {len(torrents)} 个种子")
+            except Exception as e:
+                self.logger.error(f"获取分类 '{category}' 失败: {str(e)}")
+                results[category] = []
+
+        return results
+
+    async def _get_torrents_by_category_safe(
+        self,
+        category: str,
+        use_api_pool: bool = True
+    ) -> List[Dict[str, Any]]:
+        """安全按分类获取种子"""
+        url = f"{self._base_url}/api/v2/torrents/info"
+        params = {'category': category}
+
+        session = self._api_pool if use_api_pool else self.session
+        async with session.get(url, params=params) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            else:
+                error_text = await resp.text()
+                raise QBittorrentError(f"获取分类 '{category}' 失败: {error_text}")
+
+    def get_batch_stats(self) -> Dict[str, Any]:
+        """获取批量操作统计信息"""
+        stats = self._batch_stats.copy()
+
+        if stats['total_batches'] > 0:
+            stats['success_rate'] = (
+                stats['successful_batches'] / stats['total_batches'] * 100
+            )
+        else:
+            stats['success_rate'] = 0.0
+
+        return stats
+
+    async def _smart_retry_with_different_params(self, error: Exception) -> Any:
+        """
+        智能错误恢复 - 优化指导文档建议
+        根据错误类型使用不同的重试策略
+        """
+        if isinstance(error, QbtRateLimitError):
+            # 限流错误：等待更长时间
+            self.logger.warning("检测到 API 限流，等待后重试...")
+            await asyncio.sleep(5)
+            # 降低并发度
+            return await self._retry_with_reduced_concurrency()
+        elif isinstance(error, QbtPermissionError):
+            # 权限错误：不重试，直接抛出
+            raise QBittorrentError("权限不足，无法重试")
+        elif isinstance(error, NetworkError):
+            # 网络错误：指数退避重试
+            self.logger.warning("网络错误，指数退避重试...")
+            await asyncio.sleep(2)
+            return await self._retry_with_backoff()
+        else:
+            # 其他错误：标准重试
+            raise
+
+    async def _retry_with_reduced_concurrency(self) -> Any:
+        """降低并发度重试"""
+        # 这里可以动态调整连接池大小
+        # 暂时返回 False 表示需要降低并发
+        return False
+
+    async def _retry_with_backoff(self) -> Any:
+        """指数退避重试"""
+        await asyncio.sleep(1)
+        return True

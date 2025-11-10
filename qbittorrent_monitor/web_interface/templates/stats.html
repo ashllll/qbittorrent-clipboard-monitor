@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block title %}统计信息{% endblock %}
+
+{% block content %}
+<div id="stats">
+    <van-pull-refresh v-model="loading" @refresh="onRefresh">
+        <!-- 概览卡片 -->
+        <van-card>
+            <template #title>
+                <h3>系统概览</h3>
+            </template>
+            <template #desc>
+                <div class="overview-grid">
+                    <div class="overview-item">
+                        <div class="value">[[ stats.total_requests || 0 ]]</div>
+                        <div class="label">总请求数</div>
+                    </div>
+                    <div class="overview-item">
+                        <div class="value">[[ stats.error_rate || 0 ]]%</div>
+                        <div class="label">错误率</div>
+                    </div>
+                    <div class="overview-item">
+                        <div class="value">[[ stats.avg_response_time || 0 ]]ms</div>
+                        <div class="label">平均响应</div>
+                    </div>
+                    <div class="overview-item">
+                        <div class="value">[[ stats.cache_hit_rate || 0 ]]%</div>
+                        <div class="label">缓存命中</div>
+                    </div>
+                </div>
+            </template>
+        </van-card>
+
+        <!-- 图表区域 -->
+        <van-card style="margin-top: 10px;">
+            <template #title>
+                <h3>性能趋势</h3>
+            </template>
+            <template #desc>
+                <div id="performanceChart" style="width: 100%; height: 300px;"></div>
+            </template>
+        </van-card>
+
+        <van-card style="margin-top: 10px;">
+            <template #title>
+                <h3>分类统计</h3>
+            </template>
+            <template #desc>
+                <div id="categoryChart" style="width: 100%; height: 300px;"></div>
+            </template>
+        </van-card>
+
+        <!-- 详细统计 -->
+        <van-card style="margin-top: 10px;">
+            <template #title>
+                <h3>详细统计</h3>
+            </template>
+            <template #desc>
+                <van-cell-group>
+                    <van-cell title="qBittorrent连接" :value="getStatusText('qbittorrent')" :value-class="getStatusClass('qbittorrent')" />
+                    <van-cell title="缓存系统" :value="getStatusText('cache')" :value-class="getStatusClass('cache')" />
+                    <van-cell title="熔断器状态" :value="getCircuitBreakerStatus()" />
+                    <van-cell title="限流器" :value="getRateLimiterStatus()" />
+                </van-cell-group>
+            </template>
+        </van-card>
+    </van-pull-refresh>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+Vue.createApp({
+    ...Vue.options.components,
+    extends: Vue.options,
+    data() {
+        return {
+            loading: false,
+            stats: {},
+            healthData: {},
+            performanceChart: null,
+            categoryChart: null
+        }
+    },
+    methods: {
+        async onRefresh() {
+            await this.loadData();
+            this.loading = false;
+            Vue.prototype.$toast.success('刷新成功');
+        },
+        async loadData() {
+            try {
+                // 加载统计数据
+                const statsRes = await axios.get('/api/stats');
+                if (statsRes.data.success) {
+                    this.stats = statsRes.data.data;
+                }
+
+                // 加载健康状态
+                const healthRes = await axios.get('/api/health');
+                if (healthRes.data.success) {
+                    this.healthData = healthRes.data.data;
+                }
+
+                this.$nextTick(() => {
+                    this.initCharts();
+                });
+            } catch (e) {
+                console.error('加载统计数据失败:', e);
+                Vue.prototype.$toast.fail('加载失败');
+            }
+        },
+        initCharts() {
+            // 性能趋势图
+            if (this.performanceChart) {
+                this.performanceChart.dispose();
+            }
+            this.performanceChart = echarts.init(document.getElementById('performanceChart'));
+            this.performanceChart.setOption({
+                xAxis: {
+                    type: 'category',
+                    data: ['1分钟前', '50秒', '40秒', '30秒', '20秒', '10秒', '现在']
+                },
+                yAxis: {
+                    type: 'value'
+                },
+                series: [{
+                    name: '响应时间',
+                    type: 'line',
+                    data: [120, 132, 101, 134, 90, 230, 210]
+                }],
+                tooltip: {
+                    trigger: 'axis'
+                }
+            });
+
+            // 分类统计图
+            if (this.categoryChart) {
+                this.categoryChart.dispose();
+            }
+            this.categoryChart = echarts.init(document.getElementById('categoryChart'));
+            this.categoryChart.setOption({
+                tooltip: {
+                    trigger: 'item'
+                },
+                legend: {
+                    orient: 'vertical',
+                    left: 'left'
+                },
+                series: [{
+                    name: '分类统计',
+                    type: 'pie',
+                    radius: '50%',
+                    data: [
+                        { value: 35, name: '电影' },
+                        { value: 28, name: '动漫' },
+                        { value: 20, name: '音乐' },
+                        { value: 17, name: '其他' }
+                    ]
+                }]
+            });
+        },
+        getStatusText(component) {
+            if (!this.healthData.checks) return '未知';
+            const check = this.healthData.checks.find(c => c.name === component);
+            if (!check) return '未检查';
+            return check.message;
+        },
+        getStatusClass(component) {
+            if (!this.healthData.checks) return '';
+            const check = this.healthData.checks.find(c => c.name === component);
+            if (!check) return '';
+            if (check.status === 'healthy') return 'success-text';
+            if (check.status === 'warning') return 'warning-text';
+            return 'error-text';
+        },
+        getCircuitBreakerStatus() {
+            if (!this.stats.qbt_client) return '未知';
+            return this.stats.qbt_client.circuit_breaker?.state || '未知';
+        },
+        getRateLimiterStatus() {
+            if (!this.stats.qbt_client) return '未知';
+            const rl = this.stats.qbt_client.rate_limiter;
+            if (!rl) return '未知';
+            return `允许: ${rl.allowed_requests}, 拒绝: ${rl.rejected_requests}`;
+        }
+    },
+    mounted() {
+        this.loadData();
+
+        // 定时刷新
+        setInterval(() => {
+            this.loadData();
+        }, 10000);
+    }
+}).mount('#stats');
+</script>
+
+<style scoped>
+.overview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.overview-item {
+    text-align: center;
+    padding: 10px;
+    background: #f7f8fa;
+    border-radius: 4px;
+}
+
+.overview-item .value {
+    font-size: 20px;
+    font-weight: bold;
+    color: #1989fa;
+    margin-bottom: 5px;
+}
+
+.overview-item .label {
+    font-size: 12px;
+    color: #666;
+}
+
+.success-text {
+    color: #07c160;
+}
+
+.warning-text {
+    color: #ff976a;
+}
+
+.error-text {
+    color: #ee0a24;
+}
+</style>
+{% endblock %}
