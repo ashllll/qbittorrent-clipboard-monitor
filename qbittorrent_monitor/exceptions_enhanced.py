@@ -389,7 +389,8 @@ class ConnectionPool:
             if hasattr(conn, '_closed'):
                 return not conn._closed
             return True
-        except:
+        except Exception:
+            logger.debug("检查连接状态失败")
             return False
 
     async def close_all(self):
@@ -399,8 +400,8 @@ class ConnectionPool:
                 if hasattr(conn, 'close'):
                     try:
                         await conn.close()
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"关闭连接失败: {str(e)}")
             self._pool.clear()
             self._used.clear()
 

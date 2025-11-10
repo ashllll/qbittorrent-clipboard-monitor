@@ -55,7 +55,8 @@ class WebSocketManager:
             for connection in self.active_connections:
                 try:
                     await connection.send_text(message_str)
-                except:
+                except Exception as e:
+                    logger.debug(f"WebSocket发送失败，连接已断开: {str(e)}")
                     disconnected.append(connection)
 
             # 清理断开的连接

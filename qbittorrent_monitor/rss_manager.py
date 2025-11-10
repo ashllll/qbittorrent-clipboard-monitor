@@ -392,8 +392,8 @@ class RSSManager:
                     size_value = float(size_str)
                     multipliers = {'KB': 1024, 'MB': 1024**2, 'GB': 1024**3, 'TB': 1024**4}
                     size = int(size_value * multipliers.get(unit.upper(), 1))
-                except:
-                    pass
+                except Exception:
+                    logger.debug(f"解析大小失败: {size_str}")
                 break
 
         # 提取做种数
