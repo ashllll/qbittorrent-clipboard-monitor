@@ -81,6 +81,7 @@ class FilterResult:
     action: FilterAction
     score: float
     quality_level: ContentQuality
+    size: Optional[str] = ""  # 文件大小信息
     reasons: List[str] = field(default_factory=list)
     priority: int = 0
     tags: List[str] = field(default_factory=list)
@@ -340,12 +341,23 @@ class IntelligentFilter:
 
     def apply_filter_rules(self, content: ContentInfo) -> FilterResult:
         """应用过滤规则"""
+        # 将size转换为字符串格式
+        size_str = ""
+        if content.size:
+            if content.size >= 1024**3:  # >= 1GB
+                size_str = f"{content.size / (1024**3):.1f}GB"
+            elif content.size >= 1024**2:  # >= 1MB
+                size_str = f"{content.size / (1024**2):.1f}MB"
+            else:
+                size_str = f"{content.size}B"
+        
         result = FilterResult(
             content=content,
             allowed=True,
             action=FilterAction.ALLOW,
             score=content.quality_score,
-            quality_level=content.quality_level
+            quality_level=content.quality_level,
+            size=size_str
         )
 
         for rule in sorted(self.default_rules, key=lambda r: r.priority, reverse=True):
@@ -460,12 +472,23 @@ class IntelligentFilter:
         # 检查重复
         if self.is_duplicate(content):
             self.stats["duplicates"] += 1
+            # 生成size字符串
+            size_str = ""
+            if content.size:
+                if content.size >= 1024**3:  # >= 1GB
+                    size_str = f"{content.size / (1024**3):.1f}GB"
+                elif content.size >= 1024**2:  # >= 1MB
+                    size_str = f"{content.size / (1024**2):.1f}MB"
+                else:
+                    size_str = f"{content.size}B"
+            
             result = FilterResult(
                 content=content,
                 allowed=False,
                 action=FilterAction.BLOCK,
                 score=0.0,
                 quality_level=ContentQuality.REJECT,
+                size=size_str,
                 reasons=["重复内容"]
             )
             return result

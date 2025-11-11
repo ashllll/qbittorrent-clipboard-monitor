@@ -470,12 +470,23 @@ class RSSManager:
         except Exception as e:
             self.logger.error(f"过滤项目失败: {e}")
             # 过滤失败时允许通过
+            # 生成size字符串
+            size_str = ""
+            if item.size:
+                if item.size >= 1024**3:  # >= 1GB
+                    size_str = f"{item.size / (1024**3):.1f}GB"
+                elif item.size >= 1024**2:  # >= 1MB
+                    size_str = f"{item.size / (1024**2):.1f}MB"
+                else:
+                    size_str = f"{item.size}B"
+            
             return FilterResult(
                 content=item,
                 allowed=True,
                 action=None,
                 score=0.0,
-                quality_level=None
+                quality_level=None,
+                size=size_str
             )
 
     def _evaluate_filter(self, item: RSSItem, field: str, operator: str, value: Any) -> bool:
