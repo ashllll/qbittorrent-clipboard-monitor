@@ -123,7 +123,7 @@ print(f"活动级别: {stats['avg_activity_level']:.1f}/10")
 
 ## 📋 版本更新记录
 
-### v2.4.0 (2025-11-11) - **模块化架构重构**
+### v2.4.0 (2025-11-11) - **模块化架构重构与问题修复**
 - 🏗️ **重大架构优化**: 实现完全模块化架构，代码可维护性提升 300%+
   - 拆分 qbittorrent_client 模块 (1,197 行 → 9 个模块)
   - 每个模块 < 200 行，易于理解和维护
@@ -138,6 +138,14 @@ print(f"活动级别: {stats['avg_activity_level']:.1f}/10")
   - `qbt/metrics.py` - 性能监控
   - `qbt/batch_operations.py` - 批量操作优化
   - `qbt/__init__.py` - 智能导入系统
+
+- 🔧 **关键问题修复**:
+  - **网页爬取功能**: 修复 Playwright 浏览器环境依赖问题
+    - 自动安装 Chromium 浏览器，解决 crawl4ai 依赖问题
+    - 支持 https://github.com/davidesantangelo/krep 等网站正常爬取
+  - **智能过滤功能**: 修复 FilterResult 对象缺少 size 属性问题
+    - 为 FilterResult 类添加 size 属性，完善内容过滤信息
+    - 更新所有使用 FilterResult 的地方以兼容新属性
 
 - 🔄 **100% 向后兼容**: 所有现有API和导入路径完全保持兼容
 - 🧪 **完整测试覆盖**: 所有模块通过语法检查和导入测试
