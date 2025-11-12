@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "qbittorrent-clipboard-monitor"
-version = "2.1.0"
+version = "2.5.0"
 description = "磁力链接监控与自动分类下载工具"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
