@@ -162,7 +162,11 @@ cp .env.example .env
 # 编辑 .env 文件配置 qBittorrent 和 AI 参数
 
 # 5. 启动程序
-python start.py
+./run.sh  # Linux/macOS (推荐)
+run.bat   # Windows (推荐)
+
+# 或使用简化启动脚本
+python run.py
 ```
 
 ### 方式3：开发模式
@@ -175,8 +179,50 @@ scripts/setup_dev.sh
 scripts/run_tests.sh
 
 # 启动开发模式
-python start.py --debug
+python run.py --web
 ```
+
+### 🚀 启动方式对比
+
+| 方式 | 命令 | 适用场景 | 特点 |
+|------|------|----------|------|
+| **推荐** | `./run.sh` 或 `run.bat` | 🏆 **首次使用**<br>🔄 **生产部署** | ✅ 零配置部署<br>✅ 自动环境管理<br>✅ 健康监控<br>✅ 优雅关闭 |
+| **简化** | `python run.py` | ⚡ **已配置环境**<br>👨‍💻 **开发者** | 🚀 快速启动<br>🌐 支持Web界面<br>📋 RSS管理<br>⚙️ 命令行参数 |
+| **高级** | `python run.py --web` | 🌐 **需要Web管理**<br>📊 **实时监控** | 🖥️ Web管理界面<br>📈 实时统计<br>🔧 远程配置 |
+
+### 💻 启动脚本说明
+
+#### `./run.sh` (推荐) - 智能启动
+```bash
+# 自动执行：
+# ✅ Python虚拟环境检查和激活
+# ✅ 依赖版本兼容性验证
+# ✅ 配置文件自动修复
+# ✅ 健康检查服务启动
+# ✅ 优雅关闭机制
+```
+
+#### `python run.py` - 简化启动
+```bash
+# 基础启动
+python run.py
+
+# 带Web界面
+python run.py --web --port 8080
+
+# 自定义监听地址
+python run.py --web --host 192.168.1.100
+```
+
+#### `python run.py --web` - Web管理界面
+- **管理面板**: http://localhost:8000
+- **健康检查**: http://localhost:8090/health
+- **监控指标**: http://localhost:8091/metrics
+- **功能特性**:
+  - 📊 实时下载统计
+  - 🏷️ 分类管理
+  - 📋 RSS订阅管理
+  - ⚙️ 配置热更新
 
 ---
 
@@ -257,7 +303,7 @@ LOG_FILE=logs/qbittorrent-monitor.log
 
 ```mermaid
 graph TB
-    A[start.py<br/>启动入口] --> B[智能环境管理器<br/>scripts/environment_manager.py]
+    A[run.sh/run.bat<br/>启动入口] --> B[智能环境管理器<br/>scripts/environment_manager.py]
     A --> C[配置验证器<br/>config_validator.py]
     B --> D[qbittorrent_monitor/<br/>核心模块]
 
@@ -388,7 +434,7 @@ scripts/run_tests.sh tests/integration
 ### 开发者提示
 - `scripts/setup_dev.sh`：一次性安装项目与开发依赖。
 - `scripts/run_tests.sh`：包装 `python3 -m pytest -v`，可传入任意 pytest 参数。
-- 仍可直接运行 `python start.py` 启动剪贴板监控，也可引用 `ClipboardMonitor`/`WebCrawler` 组合做自定义自动化。
+- 仍可直接运行 `python run.py` 启动剪贴板监控，也可引用 `ClipboardMonitor`/`WebCrawler` 组合做自定义自动化。
 
 ### 测试覆盖率
 ```bash

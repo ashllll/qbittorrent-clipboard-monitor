@@ -1,6 +1,20 @@
 #!/usr/bin/env python3
 """
-简化启动脚本 - 直接启动，跳过依赖安装
+qBittorrent剪贴板监控器 - 简化启动脚本
+版本: v2.5.0
+
+功能特性:
+- 直接启动，跳过依赖安装（适用于已配置环境）
+- 支持Web管理界面启动
+- 内置RSS订阅管理
+- 命令行参数配置
+
+使用方法:
+    python run.py                     # 基础剪贴板监控
+    python run.py --web              # 启动Web管理界面
+    python run.py --web --port 8080  # 指定Web端口
+
+注意: 首次使用请运行 python scripts/environment_manager.py 进行环境配置
 """
 
 import sys
@@ -23,8 +37,9 @@ async def main():
     args = parser.parse_args()
 
     print("=" * 60)
-    print("QBittorrent智能下载助手 - 简化版启动")
+    print("🚀 qBittorrent剪贴板监控器 v2.5.0 - 简化启动")
     print("=" * 60)
+    print("💡 提示: 首次使用请运行 python scripts/environment_manager.py")
     print()
 
     try:
@@ -90,10 +105,12 @@ async def main():
                     print("[TIP] 请安装: pip install fastapi uvicorn jinja2")
             else:
                 print("=" * 60)
-                print("程序已启动！等待剪贴板内容...")
-                print("按 Ctrl+C 停止监控")
+                print("🎯 程序已启动！等待剪贴板内容...")
+                print("📋 按 Ctrl+C 停止监控")
                 print()
-                print("提示: 使用 --web 参数可以启动Web管理界面")
+                print("💡 提示: 使用 --web 参数可以启动Web管理界面")
+                print("🏥 健康检查: http://localhost:8090/health")
+                print("📊 监控指标: http://localhost:8091/metrics")
                 print("=" * 60)
                 print()
 
