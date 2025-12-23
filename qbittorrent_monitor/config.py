@@ -27,6 +27,82 @@ import asyncio
 from collections import defaultdict
 
 
+# ============================================================================
+# 密码安全处理模块
+# ============================================================================
+
+try:
+    from passlib.context import CryptContext
+    PASSWORD_HASH_AVAILABLE = True
+except ImportError:
+    PASSWORD_HASH_AVAILABLE = False
+
+
+class PasswordManager:
+    """密码安全管理器"""
+    
+    _crypt_context = None
+    
+    @classmethod
+    def get_crypt_context(cls) -> Any:
+        """获取密码哈希上下文"""
+        if cls._crypt_context is None and PASSWORD_HASH_AVAILABLE:
+            cls._crypt_context = CryptContext(
+                schemes=["bcrypt"],
+                deprecated="auto",
+                bcrypt__rounds=12
+            )
+        return cls._crypt_context
+    
+    @staticmethod
+    def hash_password(password: str) -> str:
+        """安全地哈希密码"""
+        if not password:
+            return ""
+        
+        if PASSWORD_HASH_AVAILABLE:
+            ctx = PasswordManager.get_crypt_context()
+            if ctx:
+                return ctx.hash(password)
+        
+        # 如果passlib不可用，使用简单的占位符（开发环境警告）
+        import warnings
+        warnings.warn(
+            "passlib未安装，密码将以明文存储。请安装passlib: pip install passlib[bcrypt]",
+            UserWarning
+        )
+        return f"__plain__{password}"
+    
+    @staticmethod
+    def verify_password(plain_password: str, hashed_password: str) -> bool:
+        """验证密码"""
+        if not plain_password or not hashed_password:
+            return False
+        
+        # 检查是否是明文存储的旧格式
+        if hashed_password.startswith("__plain__"):
+            return plain_password == hashed_password[9:]
+        
+        if PASSWORD_HASH_AVAILABLE:
+            ctx = PasswordManager.get_crypt_context()
+            if ctx:
+                return ctx.verify(plain_password, hashed_password)
+        
+        # 如果passlib不可用，直接比较
+        return plain_password == hashed_password
+    
+    @staticmethod
+    def needs_rehashing(hashed_password: str) -> bool:
+        """检查密码是否需要重新哈希"""
+        if not PASSWORD_HASH_AVAILABLE:
+            return False
+        
+        ctx = PasswordManager.get_crypt_context()
+        if ctx:
+            return ctx.needs_update(hashed_password)
+        return False
+
+
 @dataclass
 class ConfigStats:
     """配置管理统计信息"""
@@ -217,7 +293,8 @@ class QBittorrentConfig(BaseModel):
     host: str = "192.168.1.40"
     port: int = 8989
     username: str = "admin"
-    password: str = "password"
+    password: str = "password"  # 保持向后兼容，明文密码
+    hashed_password: Optional[str] = None  # 新增：哈希密码存储
     use_https: bool = False
     verify_ssl: bool = True
     # 移到这里的路径配置
@@ -255,6 +332,24 @@ class QBittorrentConfig(BaseModel):
         if not v:
             raise ValueError('密码不能为空')
         return v
+    
+    def get_effective_password(self) -> str:
+        """获取有效密码（优先使用明文密码）"""
+        # 优先使用明文密码（向后兼容）
+        if self.password:
+            return self.password
+        # 否则使用哈希密码
+        return self.hashed_password or ""
+    
+    def verify_password(self, plain_password: str) -> bool:
+        """验证密码"""
+        # 优先验证明文密码
+        if self.password and plain_password == self.password:
+            return True
+        # 验证哈希密码
+        if self.hashed_password:
+            return PasswordManager.verify_password(plain_password, self.hashed_password)
+        return False
 
 
 class DeepSeekConfig(BaseModel):

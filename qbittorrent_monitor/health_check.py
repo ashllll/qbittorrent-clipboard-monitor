@@ -15,6 +15,9 @@ from pathlib import Path
 from aiohttp import web, ClientSession
 import aiohttp_cors
 
+# 导入版本信息
+from .__version__ import __version__, get_version_info
+
 logger = logging.getLogger(__name__)
 
 
@@ -412,7 +415,7 @@ class HealthChecker:
             status=overall_status,
             timestamp=datetime.now(),
             uptime=uptime,
-            version="2.4.0",  # 从配置或常量获取
+            version=__version__,  # 使用中央版本管理
             checks={name: asdict(status) for name, status in self._component_status.items()},
             metrics=metrics,
             errors=errors

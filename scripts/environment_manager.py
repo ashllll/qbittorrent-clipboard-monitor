@@ -31,10 +31,6 @@ class SmartEnvironmentManager:
         # 环境配置文件
         self.env_file = self.project_root / ".env"
         self.env_example_file = self.project_root / ".env.example"
-        self.requirements_files = [
-            self.project_root / "requirements.txt",
-            self.project_root / "requirements-dev.txt"
-        ]
         self.pyproject_file = self.project_root / "pyproject.toml"
 
         logger.info(f"环境管理器初始化完成 - Python {self.python_version} on {self.platform}")
@@ -108,24 +104,6 @@ class SmartEnvironmentManager:
             logger.error(f"命令执行失败: {full_command}, 错误: {e}")
             raise
 
-    def install_dependencies(self) -> bool:
-        """安装项目依赖"""
-        success = True
-
-        # 检查pyproject.toml是否存在（Poetry项目）
-        if self.pyproject_file.exists():
-            logger.info("检测到Poetry项目，尝试安装Poetry...")
-            if self._install_poetry():
-                success &= self._install_with_poetry()
-            else:
-                logger.warning("Poetry安装失败，回退到pip安装")
-                success &= self._install_with_pip()
-        else:
-            # 传统pip安装
-            success &= self._install_with_pip()
-
-        return success
-
     def _install_poetry(self) -> bool:
         """安装Poetry"""
         try:
@@ -158,6 +136,16 @@ class SmartEnvironmentManager:
         except subprocess.CalledProcessError as e:
             logger.error(f"Poetry安装失败: {e}")
             return False
+
+    def install_dependencies(self) -> bool:
+        """安装项目依赖"""
+        # Poetry是主要依赖管理工具
+        logger.info("使用Poetry安装依赖...")
+        if not self._install_poetry():
+            logger.error("Poetry安装失败，无法安装依赖")
+            return False
+
+        return self._install_with_poetry()
 
     def _install_with_poetry(self) -> bool:
         """使用Poetry安装依赖"""

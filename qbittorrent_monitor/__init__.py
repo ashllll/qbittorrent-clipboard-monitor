@@ -4,24 +4,35 @@ QBittorrent剪贴板监控与自动分类下载工具
 提供磁力链接监控、AI智能分类、自动下载等功能。
 """
 
-__version__ = "2.1.0"
-__author__ = "QBittorrent Monitor Team"
+# 导入版本信息
+from .__version__ import (
+    __version__,
+    __version_info__,
+    PROJECT_NAME,
+    PROJECT_DESCRIPTION,
+    AUTHOR,
+    get_version_string,
+    get_version_info
+)
 
-from .config import ConfigManager, AppConfig
-from .qbittorrent_client import QBittorrentClient
-from .ai_classifier import AIClassifier
-from .clipboard_monitor import ClipboardMonitor
-from .exceptions import *
-
+__author__ = AUTHOR
 __all__ = [
+    # 版本信息
+    "__version__",
+    "__version_info__",
+    "PROJECT_NAME",
+    "PROJECT_DESCRIPTION",
+    "get_version_string",
+    "get_version_info",
+    # 核心类
     "ConfigManager",
-    "AppConfig", 
+    "AppConfig",
     "QBittorrentClient",
     "AIClassifier",
     "ClipboardMonitor",
     # 异常类
     "ConfigError",
-    "QBittorrentError", 
+    "QBittorrentError",
     "NetworkError",
     "AIError",
     "ClassificationError",

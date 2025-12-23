@@ -26,20 +26,24 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Cache pip dependencies
+    - name: Set up Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Cache dependencies
       uses: actions/cache@v3
       with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+        path: .venv
+        key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
     - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           python3-dev \
-          python3-pip \
           build-essential \
           libssl-dev \
           libffi-dev \
@@ -48,32 +52,35 @@ jobs:
           libpng-dev
 
     - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install -r requirements-dev.txt
+      run: poetry install
 
     - name: Validate code style
-      run: |
-        black --check --diff qbittorrent_monitor/ tests/
-        flake8 qbittorrent_monitor/ tests/
+      run: poetry run black --check --diff qbittorrent_monitor/ tests/
+
+    - name: Run linter
+      run: poetry run flake8 qbittorrent_monitor/ tests/
 
     - name: Type checking
-      run: |
-        mypy qbittorrent_monitor/ --strict --ignore-missing-imports
+      run: poetry run mypy qbittorrent_monitor/ --strict --ignore-missing-imports
 
     - name: Run unit tests
       run: |
-        pytest tests/unit/ -v \
+        poetry run pytest tests/unit/ -v \
           --cov=qbittorrent_monitor \
           --cov-report=xml \
           --cov-report=html \
           --cov-report=term-missing \
+          --cov-fail-under=85 \
           --junitxml=pytest-unit.xml
 
     - name: Run integration tests
       run: |
-        pytest tests/integration/ -v \
+        poetry run pytest tests/integration/ -v \
+          --cov=qbittorrent_monitor \
+          --cov-report=xml \
+          --cov-report=html \
+          --cov-report=term-missing \
+          --cov-fail-under=70 \
           --junitxml=pytest-integration.xml
 
     - name: Upload coverage to Codecov
@@ -115,15 +122,18 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install safety bandit
+    - name: Set up Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+
+    - name: Install Poetry
+      run: poetry install
 
     - name: Run security scan
       run: |
-        safety check --json --output safety-report.json || true
-        bandit -r qbittorrent_monitor/ -f json -o bandit-report.json || true
+        poetry run safety check --json --output safety-report.json || true
+        poetry run bandit -r qbittorrent_monitor/ -f json -o bandit-report.json || true
 
     - name: Upload security reports
       uses: actions/upload-artifact@v3
@@ -187,15 +197,17 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    - name: Set up Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest-benchmark psutil
+      run: poetry install --with dev
 
     - name: Run performance tests
       run: |
-        pytest tests/performance/ -v \
+        poetry run pytest tests/performance/ -v \
           --benchmark-only \
           --benchmark-json=benchmark.json
 
@@ -217,11 +229,13 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
 
+    - name: Set up Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install sphinx sphinx-rtd-theme sphinx-autodoc-typehints
+      run: poetry install --with dev
 
     - name: Build documentation
       run: |

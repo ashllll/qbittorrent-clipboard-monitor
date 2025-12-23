@@ -30,13 +30,19 @@
 git clone https://github.com/ashllll/qbittorrent-clipboard-monitor.git
 cd qbittorrent-clipboard-monitor
 
-# 2. 自动环境配置
-python scripts/environment_manager.py
+# 2. 安装Poetry（如果尚未安装）
+curl -sSL https://install.python-poetry.org | python3 -
 
-# 3. 配置验证（可选）
+# 3. 安装项目依赖
+poetry install
+
+# 4. 安装开发依赖（如果需要）
+poetry install --with dev
+
+# 5. 配置验证（可选）
 python qbittorrent_monitor/config_validator.py --fix
 
-# 4. 启动服务
+# 6. 启动服务
 ./run.sh  # Linux/macOS
 # 或
 run.bat   # Windows
@@ -134,12 +140,11 @@ pip install --upgrade pip setuptools wheel
 
 ```bash
 # 使用Poetry（推荐）
-pip install poetry
+curl -sSL https://install.python-poetry.org | python3 -
 poetry install
 
-# 或使用pip
-pip install -r requirements.txt
-pip install -r requirements-dev.txt  # 开发依赖
+# 安装开发依赖
+poetry install --with dev
 ```
 
 ### 4. 环境变量配置

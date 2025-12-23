@@ -16,6 +16,9 @@ project_root = Path(__file__).parent.parent
 import sys
 sys.path.insert(0, str(project_root))
 
+# 导入版本信息
+from qbittorrent_monitor import __version__
+
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -137,7 +140,7 @@ class MockQBittorrentClient:
 
     async def get_version(self):
         self.call_count['get_version'] += 1
-        return "v4.5.0"
+        return __version__
 
     async def get_categories(self):
         self.call_count['get_categories'] += 1

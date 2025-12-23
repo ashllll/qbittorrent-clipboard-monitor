@@ -27,6 +27,7 @@ from .clipboard_models import TorrentRecord
 from .notifications import NotificationManager
 from .exceptions import ClipboardError
 from .workflow_engine import initialize_workflow_engine, get_workflow_engine
+from .__version__ import __version__, PROJECT_DESCRIPTION
 
 
 class ClipboardMonitor:
@@ -240,7 +241,7 @@ class ClipboardMonitor:
         """显示欢迎消息"""
         if self.config.notifications.console.enabled:
             welcome_lines = [
-                "qBittorrent增强剪贴板监控已启动! (高性能版 v2.3.0)",
+                f"{PROJECT_DESCRIPTION}已启动! (版本 {__version__})",
                 f"基础监控间隔: {self._base_interval}秒 (动态调整: {self._base_interval}-{self._max_interval}秒)",
                 f"AI分类器: {'已启用' if hasattr(self.ai_classifier, 'client') and self.ai_classifier.client else '使用规则引擎'}",
                 f"通知系统: {'已启用' if self.config.notifications.enabled else '已禁用'}",

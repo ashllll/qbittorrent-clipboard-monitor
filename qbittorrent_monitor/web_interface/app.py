@@ -10,10 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Dict, Any, Optional, Literal
+from enum import Enum
 import asyncio
 import json
 import logging
-from typing import List, Dict, Any, Optional
+import os
 from datetime import datetime
 import uvicorn
 
@@ -21,8 +24,84 @@ from ..config import AppConfig
 from ..qbittorrent_client_enhanced import EnhancedQBittorrentClient
 from ..monitoring import get_metrics_collector, get_health_checker
 from ..circuit_breaker import get_global_traffic_controller
+from ..__version__ import __version__, PROJECT_DESCRIPTION
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# 安全配置 - 使用环境变量控制
+# ============================================================================
+
+class SecurityConfig:
+    """安全配置管理"""
+    
+    @staticmethod
+    def get_allowed_origins() -> List[str]:
+        """从环境变量获取允许的来源列表"""
+        env_origins = os.getenv("ALLOWED_ORIGINS", "")
+        if env_origins:
+            return [origin.strip() for origin in env_origins.split(",")]
+        # 默认只允许本地开发
+        return ["http://localhost:8000", "http://127.0.0.1:8000"]
+    
+    @staticmethod
+    def get_allowed_hosts() -> List[str]:
+        """从环境变量获取允许的主机列表"""
+        env_hosts = os.getenv("ALLOWED_HOSTS", "")
+        if env_hosts:
+            return [host.strip() for host in env_hosts.split(",")]
+        return ["localhost", "127.0.0.1"]
+
+
+# ============================================================================
+# WebSocket 消息模型 - 输入验证
+# ============================================================================
+
+class WebSocketMessageType(str, Enum):
+    """WebSocket 消息类型枚举"""
+    PING = "ping"
+    PONG = "pong"
+    STATS_REQUEST = "stats_request"
+    STATS_UPDATE = "stats_update"
+    SUBSCRIBE = "subscribe"
+    UNSUBSCRIBE = "unsubscribe"
+    ERROR = "error"
+
+
+class WebSocketMessage(BaseModel):
+    """WebSocket 消息模型 - 带输入验证"""
+    type: WebSocketMessageType
+    data: Optional[Dict[str, Any]] = None
+    request_id: Optional[str] = Field(None, max_length=64)
+    
+    class Config:
+        extra = "forbid"  # 禁止额外字段
+
+
+class APIResponse(BaseModel):
+    """统一 API 响应格式"""
+    success: bool
+    data: Optional[Any] = None
+    error: Optional[Dict[str, Any]] = None
+    meta: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    
+    @classmethod
+    def success(cls, data: Any = None, meta: Dict = None) -> "APIResponse":
+        return cls(success=True, data=data, error=None, meta=meta or {})
+    
+    @classmethod
+    def error(cls, message: str, code: str = "UNKNOWN_ERROR", details: Dict = None) -> "APIResponse":
+        return cls(
+            success=False,
+            data=None,
+            error={
+                "code": code,
+                "message": message,
+                "details": details or {},
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
 
 
 class WebSocketManager:
@@ -72,9 +151,9 @@ class WebInterface:
         self.config = config
         self.qbt_client = qbt_client
         self.app = FastAPI(
-            title="qBittorrent剪贴板监控器",
+            title=PROJECT_DESCRIPTION,
             description="Web管理界面",
-            version="1.0.0"
+            version=__version__
         )
 
         # WebSocket管理器
@@ -85,13 +164,13 @@ class WebInterface:
         self.health_checker = get_health_checker()
         self.traffic_controller = get_global_traffic_controller()
 
-        # 配置CORS
+        # 配置CORS - 使用安全配置
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=SecurityConfig.get_allowed_origins(),  # 从环境变量读取
             allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # 明确列出方法
+            allow_headers=["Content-Type", "Authorization", "X-Request-ID"],  # 明确列出头
         )
 
         # 挂载静态文件和模板
@@ -541,38 +620,40 @@ class WebInterface:
                 logger.error(f"获取性能指标失败: {str(e)}")
                 return {"success": False, "error": str(e)}
 
-        # WebSocket端点
+        # WebSocket端点 - 带输入验证
         @self.app.websocket("/ws")
         async def websocket_endpoint(websocket: WebSocket):
             await self.ws_manager.connect(websocket)
             try:
                 while True:
                     data = await websocket.receive_text()
-                    # 处理客户端消息
+                    # 处理客户端消息 - 带输入验证
                     try:
-                        message = json.loads(data)
+                        raw_message = json.loads(data)
+                        # 使用Pydantic模型验证消息
+                        message = WebSocketMessage(**raw_message)
                         await self._handle_websocket_message(websocket, message)
                     except json.JSONDecodeError:
-                        await websocket.send_text(json.dumps({
-                            "type": "error",
-                            "message": "Invalid JSON"
-                        }))
+                        await websocket.send_json(APIResponse.error("Invalid JSON", "JSON_ERROR").model_dump(mode='json'))
+                    except ValueError as ve:
+                        await websocket.send_json(APIResponse.error(str(ve), "VALIDATION_ERROR").model_dump(mode='json'))
             except WebSocketDisconnect:
                 self.ws_manager.disconnect(websocket)
 
-    async def _handle_websocket_message(self, websocket: WebSocket, message: Dict[str, Any]):
-        """处理WebSocket消息"""
-        message_type = message.get("type")
+    async def _handle_websocket_message(self, websocket: WebSocket, message: WebSocketMessage):
+        """处理WebSocket消息 - 使用类型化的消息模型"""
+        message_type = message.type
 
-        if message_type == "ping":
-            await websocket.send_text(json.dumps({"type": "pong"}))
-        elif message_type == "request_stats":
+        if message_type == WebSocketMessageType.PING:
+            await websocket.send_json({"type": "pong", "request_id": message.request_id})
+        elif message_type == WebSocketMessageType.STATS_REQUEST:
             # 主动推送统计信息
             stats = await self._get_realtime_stats()
-            await websocket.send_text(json.dumps({
+            await websocket.send_json({
                 "type": "stats_update",
-                "data": stats
-            }))
+                "data": stats,
+                "request_id": message.request_id
+            })
 
     async def _get_realtime_stats(self) -> Dict[str, Any]:
         """获取实时统计信息"""

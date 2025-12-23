@@ -798,17 +798,18 @@ class OpenAIClassifier(BaseAIClassifier):
         before_sleep=before_sleep_log(logging.getLogger('OpenAIClassifier.Retry'), logging.INFO)
     )
     async def _classify_with_retry(self, torrent_name: str, categories: Dict[str, CategoryConfig]) -> str:
-        """带重试的分类方法"""
+        """带重试的分类方法 - 复用线程池"""
         try:
+            # 复用父类的线程池，避免重复创建
+            prompt = self._build_prompt(torrent_name, categories)
+            client = self._get_next_client()
+            
             # 使用线程池执行同步API调用
             loop = asyncio.get_event_loop()
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(
-                    self._make_api_call_with_client,
-                    self._get_next_client(),
-                    self._build_prompt(torrent_name, categories)
-                )
-                result = await loop.run_in_executor(None, lambda: future.result())
+            result = await loop.run_in_executor(
+                self._executor,
+                lambda: self._make_api_call_with_client(client, prompt)
+            )
             
             if result and result.strip():
                 return result.strip().lower()

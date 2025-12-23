@@ -86,7 +86,7 @@ print('=== 自动修复常见问题 ===')
 run_command('python scripts/environment_manager.py --force', '重新创建虚拟环境')
 
 # 2. 重新安装依赖
-run_command('pip install -r requirements.txt --upgrade', '升级依赖')
+run_command('poetry install --no-cache --upgrade', '升级依赖')
 
 # 3. 验证配置
 run_command('python qbittorrent_monitor/config_validator.py --fix', '修复配置')

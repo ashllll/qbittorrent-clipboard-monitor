@@ -1,0 +1,139 @@
+name: Coverage Check
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # 每周一早上8点运行覆盖率检查
+    - cron: '0 8 * * 1'
+
+jobs:
+  coverage:
+    name: Coverage Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Set up Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: .venv
+        key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+
+    - name: Install dependencies
+      run: poetry install
+
+    - name: Run tests with coverage
+      run: |
+        poetry run pytest --cov=qbittorrent_monitor \
+          --cov-report=xml \
+          --cov-report=html \
+          --cov-report=term-missing \
+          --cov-fail-under=85 \
+          -v
+
+    - name: Generate coverage badge
+      uses: tj-actions/coverage-badge-py@v2
+      with:
+        output: coverage.svg
+
+    - name: Verify coverage badge
+      run: coverage-badge output coverage.svg
+
+    - name: Commit coverage badge
+      if: github.ref == 'refs/heads/main'
+      uses: crazy-max/ghaction-github-pages@v3.1.0
+      with:
+        target_branch: main
+        build_dir: coverage-report
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        file: ./coverage.xml
+        fail_ci_if_error: true
+        verbose: true
+
+    - name: Comment coverage in PR
+      if: github.event_name == 'pull_request'
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        header: coverage
+        message: |
+          ## Coverage Report
+          
+          | Module | Coverage |
+          |--------|----------|
+          | Overall | ${{ steps.coverage.outputs.coverage }}% |
+          
+          <details>
+            <summary>Full Coverage Report</summary>
+            
+            ```Coverage Report
+            ${{ steps.coverage.outputs.coverage }}
+            ```
+            
+          </details>
+
+    - name: Upload HTML coverage report
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report
+        path: htmlcov/
+
+    - name: Check minimum coverage per module
+      run: |
+        echo "Checking minimum coverage per module..."
+        
+        # 检查核心模块
+        poetry run coverage report --include="qbittorrent_monitor/ai_classifier.py" --fail-under=90
+        poetry run coverage report --include="qbittorrent_monitor/qbittorrent_client.py" --fail-under=90
+        poetry run coverage report --include="qbittorrent_monitor/config.py" --fail-under=95
+        poetry run coverage report --include="qbittorrent_monitor/exceptions.py" --fail-under=100
+        
+        # 检查其他模块
+        poetry run coverage report --include="qbittorrent_monitor/web_crawler.py" --fail-under=85
+        poetry run coverage report --include="qbittorrent_monitor/clipboard_monitor.py" --fail-under=85
+        poetry run coverage report --include="qbittorrent_monitor/resilience.py" --fail-under=95
+        poetry run coverage report --include="qbittorrent_monitor/utils.py" --fail-under=90
+        
+        echo "All module coverage requirements met!"
+
+    - name: Generate coverage report for PR
+      if: github.event_name == 'pull_request'
+      run: |
+        echo "## Coverage Report" > coverage-comment.md
+        poetry run coverage report --skip-covered >> coverage-comment.md
+        poetry run coverage html
+        echo "" >> coverage-comment.md
+        echo "<details><summary>Full Report</summary>" >> coverage-comment.md
+        echo "" >> coverage-comment.md
+        echo '```' >> coverage-comment.md
+        poetry run coverage report >> coverage-comment.md
+        echo '```' >> coverage-comment.md
+        echo "</details>" >> coverage-comment.md
+
+    - name: Comment coverage in PR
+      if: github.event_name == 'pull_request'
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        path: coverage-comment.md

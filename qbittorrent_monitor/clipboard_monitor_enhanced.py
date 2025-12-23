@@ -389,9 +389,9 @@ class EnhancedClipboardMonitor(BaseAsyncResource):
             # 使用流量控制器调用
             await self._traffic_controller.call(
                 self.action_executor.handle_magnet,
+                event.content,
                 circuit_breaker_name=f"clipboard_{self.resource_id}",
                 rate_limiter_name=f"clipboard_{self.resource_id}",
-                event.content
             )
 
             self.stats.successful_adds += 1

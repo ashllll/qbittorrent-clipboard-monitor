@@ -1,0 +1,95 @@
+[run]
+source = qbittorrent_monitor
+omit = 
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */venv/*
+    */.venv/*
+    qbittorrent_monitor/web_interface/*
+    qbittorrent_monitor/web_interface/templates/*
+    qbittorrent_monitor/web_interface/static/*
+
+[report]
+# 设置最低覆盖率门槛
+fail_under = 85
+
+# 指定覆盖率报告格式
+show_missing = True
+skip_covered = False
+
+# 排除不需要测试的代码行
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    def __str__
+    if self.debug:
+    if settings.DEBUG
+    if settings.DEBUG:
+    raise AssertionError
+    raise NotImplementedError
+    if 0:
+    if __name__ == .__main__.:
+    except ImportError:
+    except ModuleNotFoundError:
+    # 忽略异常处理中的raise
+    except.*:$
+
+# 按模块设置覆盖率目标
+[coverage:report]
+precision = 2
+show_missing = True
+skip_covered = False
+sort = Cover
+
+# 为不同模块设置不同的覆盖率要求
+[coverage:paths]
+source =
+    qbittorrent_monitor/
+    */site-packages/qbittorrent_monitor/
+
+# 按模块设置覆盖率要求
+[coverage:qbittorrent_monitor]
+# 核心模块要求更高的覆盖率
+precision = 2
+show_missing = True
+
+[coverage:qbittorrent_monitor.ai_classifier]
+# AI分类器要求90%覆盖率
+fail_under = 90
+
+[coverage:qbittorrent_monitor.qbittorrent_client]
+# qBittorrent客户端要求90%覆盖率
+fail_under = 90
+
+[coverage:qbittorrent_monitor.web_crawler]
+# 网页爬虫要求85%覆盖率
+fail_under = 85
+
+[coverage:qbittorrent_monitor.clipboard_monitor]
+# 剪贴板监控器要求85%覆盖率
+fail_under = 85
+
+[coverage:qbittorrent_monitor.config]
+# 配置模块要求95%覆盖率（配置逻辑复杂但稳定）
+fail_under = 95
+
+[coverage:qbittorrent_monitor.exceptions]
+# 异常模块要求100%覆盖率（异常定义简单但重要）
+fail_under = 100
+
+[coverage:qbittorrent_monitor.resilience]
+# 弹性设计模块要求95%覆盖率
+fail_under = 95
+
+[coverage:qbittorrent_monitor.notifications]
+# 通知模块要求80%覆盖率
+fail_under = 80
+
+[coverage:qbittorrent_monitor.utils]
+# 工具函数要求90%覆盖率
+fail_under = 90
+
+[coverage:qbittorrent_monitor.web_interface]
+# Web界面要求60%覆盖率（前端组件复杂，测试困难）
+fail_under = 60
