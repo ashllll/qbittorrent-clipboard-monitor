@@ -29,21 +29,18 @@ _MODULE_MAP: Dict[str, tuple[str, Optional[Callable]]] = {
     
     # qBittorrent 客户端 - 延迟加载
     "qbittorrent_client": ("qbittorrent_monitor.qbittorrent_client", None),
-    "qbittorrent_client_enhanced": ("qbittorrent_monitor.qbittorrent_client_enhanced", None),
     
     # RSS 管理器 - 延迟加载
     "rss_manager": ("qbittorrent_monitor.rss_manager", None),
     
     # 通知模块 - 延迟加载
     "notifications": ("qbittorrent_monitor.notifications", None),
-    "notifications_enhanced": ("qbittorrent_monitor.notifications_enhanced", None),
     
     # AI 分类器 - 延迟加载
     "ai_classifier": ("qbittorrent_monitor.ai_classifier", None),
     
     # 网页爬虫 - 延迟加载
     "web_crawler": ("qbittorrent_monitor.web_crawler", None),
-    "web_crawler_enhanced": ("qbittorrent_monitor.web_crawler_enhanced", None),
     
     # 监控与健康检查 - 延迟加载
     "monitoring": ("qbittorrent_monitor.monitoring", None),
@@ -62,7 +59,6 @@ _MODULE_MAP: Dict[str, tuple[str, Optional[Callable]]] = {
     
     # 日志模块 - 延迟加载
     "logging_config": ("qbittorrent_monitor.logging_config", None),
-    "logging_enhanced": ("qbittorrent_monitor.logging_enhanced", None),
 }
 
 

@@ -5,6 +5,7 @@
 """
 
 from typing import Optional, Any, Dict, List, Union
+from datetime import datetime
 
 
 class QBittorrentMonitorError(Exception):
@@ -489,4 +490,24 @@ class StateError(QBittorrentMonitorError):
         self.current_state = current_state
         self.target_state = target_state
         self.operation = operation
-        self.error_code = "STATE_ERROR" 
+        self.error_code = "STATE_ERROR"
+
+
+class CircuitBreakerOpenError(Exception):
+    """断路器开启异常 - 当 Circuit Breaker 处于 OPEN 状态时抛出"""
+    
+    def __init__(self, message: str = "Circuit breaker is OPEN", 
+                 service_name: Optional[str] = None,
+                 next_attempt_time: Optional[datetime] = None):
+        super().__init__(message)
+        self.service_name = service_name
+        self.next_attempt_time = next_attempt_time
+        self.error_code = "CIRCUIT_BREAKER_OPEN"
+    
+    def __str__(self) -> str:
+        base_msg = super().__str__()
+        if self.service_name:
+            base_msg = f"{base_msg} (service: {self.service_name})"
+        if self.next_attempt_time:
+            base_msg = f"{base_msg}, retry after: {self.next_attempt_time.isoformat()}"
+        return base_msg 

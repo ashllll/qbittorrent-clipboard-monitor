@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from collections import deque, defaultdict
 
-from .exceptions_enhanced import CircuitBreakerOpenError
+from .exceptions import CircuitBreakerOpenError
 from .monitoring import get_metrics_collector, get_health_checker, HealthStatus
 
 logger = logging.getLogger(__name__)

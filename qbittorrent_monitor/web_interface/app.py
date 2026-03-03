@@ -21,7 +21,7 @@ from datetime import datetime
 import uvicorn
 
 from ..config import AppConfig
-from ..qbittorrent_client_enhanced import EnhancedQBittorrentClient
+from ..qbittorrent_client import QBittorrentClient
 from ..monitoring import get_metrics_collector, get_health_checker
 from ..circuit_breaker import get_global_traffic_controller
 from ..__version__ import __version__, PROJECT_DESCRIPTION
@@ -147,7 +147,7 @@ class WebSocketManager:
 class WebInterface:
     """Web界面管理器"""
 
-    def __init__(self, config: AppConfig, qbt_client: EnhancedQBittorrentClient):
+    def __init__(self, config: AppConfig, qbt_client: QBittorrentClient):
         self.config = config
         self.qbt_client = qbt_client
         self.app = FastAPI(
@@ -735,7 +735,7 @@ _web_interface: Optional[WebInterface] = None
 
 async def start_web_interface(
     config: AppConfig,
-    qbt_client: EnhancedQBittorrentClient,
+    qbt_client: QBittorrentClient,
     host: str = "0.0.0.0",
     port: int = 8000
 ):
