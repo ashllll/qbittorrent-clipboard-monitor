@@ -140,6 +140,69 @@ stats = classifier.get_learning_stats()
 
 ---
 
+## 🤖 Playwright 爬虫模块 (可选)
+
+本项目支持集成 Playwright 实现更强大的网页爬取功能。
+
+### 什么是 Playwright?
+
+Playwright 是微软开发的现代化浏览器自动化工具，支持:
+- JavaScript 动态页面渲染
+- 快速高效的页面加载
+- 反检测措施
+- 跨浏览器支持
+
+### 安装 Playwright
+
+```bash
+# 安装 Playwright
+pip install playwright
+
+# 安装浏览器
+playwright install chromium
+```
+
+### 使用方式
+
+```python
+from qbittorrent_monitor import PlaywrightCrawler
+
+# 创建爬虫
+crawler = PlaywrightCrawler(config, qbt_client)
+
+# 爬取单个页面
+result = await crawler.crawl_page("https://example.com")
+print(result['magnets'])  # 磁力链接列表
+
+# 批量爬取
+results = await crawler.crawl_multiple(urls, max_concurrent=3)
+
+# 快速提取
+magnets = await quick_extract_magnets(url)
+```
+
+### 快速开始
+
+```python
+# 最简单的用法
+from qbittorrent_monitor.playwright_crawler import quick_extract_magnets
+
+magnets = await quick_extract_magnets("https://example-torrent-site.com")
+for magnet in magnets:
+    print(magnet)
+```
+
+### 特性
+
+- ✅ 自动提取 magnet 链接
+- ✅ 支持 thunder/flashget/qqdl 协议
+- ✅ JavaScript 渲染支持
+- ✅ 批量爬取与分页
+- ✅ 反检测措施
+- ✅ 异步高性能
+
+---
+
 ## 配置说明
 
 主要配置项在 `qbittorrent_monitor/config.json` 文件中：

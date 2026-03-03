@@ -21,6 +21,7 @@ from .qbittorrent_client import QBittorrentClient
 from .ai_classifier import AIClassifier
 from .clipboard_monitor import ClipboardMonitor
 from .ruflo_classifier import RufloClassifier
+from .playwright_crawler import PlaywrightCrawler, MagnetExtractor
 
 # 导入异常类
 from .exceptions import (
