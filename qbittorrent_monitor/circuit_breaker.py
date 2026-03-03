@@ -14,7 +14,7 @@ from enum import Enum
 from collections import deque, defaultdict
 
 from .exceptions import CircuitBreakerOpenError
-from .monitoring import get_metrics_collector, get_health_checker, HealthStatus
+from .monitoring import HealthStatus
 
 logger = logging.getLogger(__name__)
 

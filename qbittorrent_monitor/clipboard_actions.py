@@ -12,7 +12,7 @@ from typing import Callable, Dict, Any, Optional
 from .clipboard_models import TorrentRecord
 from .exceptions import TorrentParseError
 from .utils import parse_magnet, validate_magnet_link
-from .intelligent_filter import get_intelligent_filter, FilterAction
+from .intelligent_filter import get_intelligent_filter
 from .workflow_engine import get_workflow_engine
 
 

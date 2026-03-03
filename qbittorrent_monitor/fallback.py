@@ -16,7 +16,7 @@ from enum import Enum
 
 from .exceptions import AIFallbackError
 from .config import CategoryConfig
-from .retry import RetryConfig, CircuitBreaker
+from .retry import RetryConfig
 
 
 class FallbackStrategy(Enum):

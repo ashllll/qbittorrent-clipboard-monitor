@@ -31,10 +31,7 @@ import openai
 
 from .config import DeepSeekConfig, CategoryConfig
 from .resilience import RateLimiter, CircuitBreaker, LRUCache
-from .exceptions import (
-    AIError, AIApiError, AICreditError, AIRateLimitError, 
-    ClassificationError
-)
+from .exceptions import AIError, AIApiError, AICreditError, AIRateLimitError
 
 
 class BaseAIClassifier(ABC):
