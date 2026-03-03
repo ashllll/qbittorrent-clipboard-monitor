@@ -21,7 +21,7 @@ from .exceptions import (
     AIError, AIApiError, AICreditError, AIRateLimitError, AIResponseError,
     ResourceError, ResourceTimeoutError, ResourceExhaustedError,
     SecurityError, AuthenticationError, AuthorizationError,
-    ConcurrencyError, DeadlockError, TaskTimeoutError
+    ConcurrencyError, DeadlockError, TaskTimeoutError, CircuitBreakerOpenError
 )
 from .metrics import MetricsTracker
 
@@ -627,14 +627,6 @@ class RetryWithCircuitBreaker:
         self._metrics_tracker.record("total_time", elapsed_total)
         
         raise last_exception
-
-
-class CircuitBreakerOpenError(NonRetryableError):
-    """断路器开启错误"""
-    
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.error_code = "CIRCUIT_BREAKER_OPEN"
 
 
 # 预定义的重试配置
