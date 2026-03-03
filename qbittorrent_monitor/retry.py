@@ -23,7 +23,7 @@ from .exceptions import (
     SecurityError, AuthenticationError, AuthorizationError,
     ConcurrencyError, DeadlockError, TaskTimeoutError, CircuitBreakerOpenError
 )
-from .metrics import MetricsTracker
+from .resilience import MetricsTracker
 
 logger = logging.getLogger(__name__)
 
