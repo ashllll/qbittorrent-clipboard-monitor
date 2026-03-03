@@ -521,6 +521,29 @@ class NotificationConfig(BaseModel):
     email_config: Optional[Dict[str, Any]] = None
 
 
+class RufloConfig(BaseModel):
+    """Ruflo AI 集成配置"""
+    enabled: bool = False  # 是否启用 Ruflo
+    ruflo_path: str = "npx ruflo@latest"  # Ruflo 路径
+    default_agent: str = "classifier"  # 默认 Agent 名称
+    swarm_topology: str = "mesh"  # Swarm 拓扑: mesh/hierarchical/ring/star
+    max_agents: int = 5  # 最大 Agent 数量
+    timeout: int = 30  # Agent 执行超时(秒)
+    cache_ttl_hours: int = 24  # 缓存 TTL(小时)
+    cache_max_size: int = 1000  # 缓存最大大小
+    learning_enabled: bool = True  # 是否启用自学习
+    feedback_storage_path: str = ".ruflo_feedback"  # 反馈存储路径
+    
+    @field_validator('swarm_topology')
+    @classmethod
+    def validate_topology(cls, v: str) -> str:
+        """验证 Swarm 拓扑"""
+        valid_topologies = ['mesh', 'hierarchical', 'ring', 'star']
+        if v not in valid_topologies:
+            raise ValueError(f'Swarm topology must be one of: {valid_topologies}')
+        return v
+
+
 class AppConfig(BaseModel):
     """应用配置数据模型"""
     qbittorrent: QBittorrentConfig
@@ -537,6 +560,8 @@ class AppConfig(BaseModel):
     web_crawler: WebCrawlerConfig = WebCrawlerConfig()
     # 通知配置
     notifications: NotificationConfig = NotificationConfig()
+    # Ruflo AI 集成配置
+    ruflo: RufloConfig = RufloConfig()
     # 热加载配置
     hot_reload: bool = True
     # 日志配置

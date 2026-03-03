@@ -15,6 +15,22 @@ from .__version__ import (
     get_version_info
 )
 
+# 导入核心类
+from .config import ConfigManager, AppConfig, RufloConfig
+from .qbittorrent_client import QBittorrentClient
+from .ai_classifier import AIClassifier
+from .clipboard_monitor import ClipboardMonitor
+from .ruflo_classifier import RufloClassifier
+
+# 导入异常类
+from .exceptions import (
+    ConfigError,
+    QBittorrentError,
+    NetworkError,
+    AIError,
+    ClassificationError
+)
+
 __author__ = AUTHOR
 __all__ = [
     # 版本信息
@@ -30,6 +46,9 @@ __all__ = [
     "QBittorrentClient",
     "AIClassifier",
     "ClipboardMonitor",
+    # Ruflo 集成
+    "RufloClassifier",
+    "RufloConfig",
     # 异常类
     "ConfigError",
     "QBittorrentError",

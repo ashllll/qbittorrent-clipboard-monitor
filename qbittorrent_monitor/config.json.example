@@ -193,6 +193,18 @@
             "show_statistics": true
         }
     },
+    "ruflo": {
+        "enabled": false,
+        "ruflo_path": "npx ruflo@latest",
+        "default_agent": "classifier",
+        "swarm_topology": "mesh",
+        "max_agents": 5,
+        "timeout": 30,
+        "cache_ttl_hours": 24,
+        "cache_max_size": 1000,
+        "learning_enabled": true,
+        "feedback_storage_path": ".ruflo_feedback"
+    },
     "hot_reload": true,
     "log_level": "INFO",
     "log_file": "magnet_monitor.log"
