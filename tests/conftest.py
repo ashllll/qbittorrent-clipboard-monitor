@@ -1,24 +1,29 @@
 """测试配置"""
 
 import pytest
-from qbittorrent_monitor.config import Config, QBConfig, AIConfig, CategoryConfig
+import asyncio
+
+
+@pytest.fixture
+def event_loop():
+    """创建事件循环"""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
 
 @pytest.fixture
 def mock_config():
-    """测试配置"""
+    """模拟配置"""
+    from qbittorrent_monitor.config import Config, QBConfig, AIConfig, CategoryConfig
+    
     return Config(
         qbittorrent=QBConfig(host="localhost", port=8080, username="admin", password="admin"),
         ai=AIConfig(enabled=False),
-        check_interval=0.1,
-    )
-
-
-@pytest.fixture
-def mock_config_with_ai():
-    """带AI的配置"""
-    return Config(
-        qbittorrent=QBConfig(host="localhost", port=8080, username="admin", password="admin"),
-        ai=AIConfig(enabled=True, api_key="test-key"),
+        categories={
+            "movies": CategoryConfig(save_path="/downloads/movies", keywords=["movie", "1080p"]),
+            "tv": CategoryConfig(save_path="/downloads/tv", keywords=["S01", "E01"]),
+            "other": CategoryConfig(save_path="/downloads/other"),
+        },
         check_interval=0.1,
     )

@@ -1,0 +1,45 @@
+{
+  "qbittorrent": {
+    "host": "localhost",
+    "port": 8080,
+    "username": "admin",
+    "password": "adminadmin",
+    "use_https": false
+  },
+  "ai": {
+    "enabled": false,
+    "api_key": "",
+    "model": "deepseek-chat",
+    "base_url": "https://api.deepseek.com/v1",
+    "timeout": 30,
+    "max_retries": 3
+  },
+  "categories": {
+    "movies": {
+      "save_path": "/downloads/movies",
+      "keywords": ["电影", "Movie", "1080p", "4K", "BluRay", "WEB-DL"]
+    },
+    "tv": {
+      "save_path": "/downloads/tv",
+      "keywords": ["S01", "E01", "电视剧", "Series", "Season"]
+    },
+    "anime": {
+      "save_path": "/downloads/anime",
+      "keywords": ["动画", "Anime", "[GM-Team]"]
+    },
+    "music": {
+      "save_path": "/downloads/music",
+      "keywords": ["音乐", "Music", "FLAC", "MP3", "Album"]
+    },
+    "software": {
+      "save_path": "/downloads/software",
+      "keywords": ["软件", "Software", "Portable", "Crack"]
+    },
+    "other": {
+      "save_path": "/downloads/other",
+      "keywords": []
+    }
+  },
+  "check_interval": 1.0,
+  "log_level": "INFO"
+}
