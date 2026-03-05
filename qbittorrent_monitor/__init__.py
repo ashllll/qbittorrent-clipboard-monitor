@@ -1,59 +1,22 @@
-"""
-QBittorrent剪贴板监控与自动分类下载工具
+"""qBittorrent Clipboard Monitor - 精简版核心模块"""
 
-提供磁力链接监控、AI智能分类、自动下载等功能。
-"""
-
-# 导入版本信息
 from .__version__ import (
     __version__,
-    __version_info__,
     PROJECT_NAME,
     PROJECT_DESCRIPTION,
-    AUTHOR,
-    get_version_string,
-    get_version_info
 )
+from .config import Config, load_config
+from .qb_client import QBClient
+from .classifier import ContentClassifier
+from .monitor import ClipboardMonitor
 
-# 导入核心类
-from .config import ConfigManager, AppConfig, RufloConfig
-from .qbittorrent_client import QBittorrentClient
-from .ai_classifier import AIClassifier
-from .clipboard_monitor import ClipboardMonitor
-from .ruflo_classifier import RufloClassifier
-from .playwright_crawler import PlaywrightCrawler, MagnetExtractor
-
-# 导入异常类
-from .exceptions import (
-    ConfigError,
-    QBittorrentError,
-    NetworkError,
-    AIError,
-    ClassificationError
-)
-
-__author__ = AUTHOR
 __all__ = [
-    # 版本信息
     "__version__",
-    "__version_info__",
     "PROJECT_NAME",
     "PROJECT_DESCRIPTION",
-    "get_version_string",
-    "get_version_info",
-    # 核心类
-    "ConfigManager",
-    "AppConfig",
-    "QBittorrentClient",
-    "AIClassifier",
+    "Config",
+    "load_config",
+    "QBClient",
+    "ContentClassifier",
     "ClipboardMonitor",
-    # Ruflo 集成
-    "RufloClassifier",
-    "RufloConfig",
-    # 异常类
-    "ConfigError",
-    "QBittorrentError",
-    "NetworkError",
-    "AIError",
-    "ClassificationError",
-] 
+]
