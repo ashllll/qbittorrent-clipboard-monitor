@@ -21,8 +21,8 @@ def mock_config():
         qbittorrent=QBConfig(host="localhost", port=8080, username="admin", password="admin"),
         ai=AIConfig(enabled=False),
         categories={
-            "movies": CategoryConfig(save_path="/downloads/movies", keywords=["movie", "1080p"]),
-            "tv": CategoryConfig(save_path="/downloads/tv", keywords=["S01", "E01"]),
+            "movies": CategoryConfig(save_path="/downloads/movies", keywords=["movie", "BluRay"]),
+            "tv": CategoryConfig(save_path="/downloads/tv", keywords=["S01", "E01", "TV"]),
             "other": CategoryConfig(save_path="/downloads/other"),
         },
         check_interval=0.1,

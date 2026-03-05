@@ -18,15 +18,24 @@ from qbittorrent_monitor import __version__, PROJECT_DESCRIPTION
 from qbittorrent_monitor.config import load_config
 from qbittorrent_monitor.qb_client import QBClient
 from qbittorrent_monitor.monitor import ClipboardMonitor
+from qbittorrent_monitor.logging_filters import SensitiveDataFilter
 
 
 def setup_logging(level: str = "INFO") -> None:
-    """设置日志"""
+    """设置日志，包含敏感信息过滤"""
     logging.basicConfig(
         level=getattr(logging, level.upper()),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%H:%M:%S",
     )
+    
+    # 为根日志记录器添加敏感信息过滤器
+    root_logger = logging.getLogger()
+    sensitive_filter = SensitiveDataFilter()
+    
+    # 为所有处理器添加过滤器
+    for handler in root_logger.handlers:
+        handler.addFilter(sensitive_filter)
 
 
 async def main():

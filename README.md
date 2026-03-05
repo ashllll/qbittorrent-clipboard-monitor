@@ -22,6 +22,8 @@ pip install -e .
 
 ## 配置
 
+### 配置文件
+
 配置文件位于 `~/.config/qb-monitor/config.json`，首次运行会自动创建。
 
 ```json
@@ -51,7 +53,35 @@ pip install -e .
 }
 ```
 
+### 环境变量
+
+支持通过环境变量配置，优先级高于配置文件：
+
+```bash
+# 复制模板
+cp .env.example .env
+
+# 编辑 .env 文件，填入实际配置
+```
+
+支持的环境变量：
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `QBIT_HOST` | qBittorrent 主机地址 | localhost |
+| `QBIT_PORT` | qBittorrent 端口 | 8080 |
+| `QBIT_USERNAME` | qBittorrent 用户名 | admin |
+| `QBIT_PASSWORD` | qBittorrent 密码 | - |
+| `QBIT_USE_HTTPS` | 使用 HTTPS | false |
+| `AI_ENABLED` | 启用 AI 分类 | false |
+| `AI_API_KEY` | AI API 密钥 | - |
+| `AI_MODEL` | AI 模型 | deepseek-chat |
+| `CHECK_INTERVAL` | 检查间隔（秒） | 1.0 |
+| `LOG_LEVEL` | 日志级别 | INFO |
+
 ## 使用
+
+### 本地运行
 
 ```bash
 # 基础使用
@@ -62,6 +92,46 @@ python run.py --config /path/to/config.json
 
 # 调整检查间隔
 python run.py --interval 0.5
+
+# 设置日志级别
+python run.py --log-level DEBUG
+```
+
+### Docker 运行
+
+#### Docker 基础用法
+
+```bash
+# 构建镜像
+docker build -t qb-monitor .
+
+# 运行容器
+docker run -d \
+  --name qb-monitor \
+  -e QBIT_HOST=192.168.1.100 \
+  -e QBIT_PORT=8080 \
+  -e QBIT_USERNAME=admin \
+  -e QBIT_PASSWORD=yourpassword \
+  -e AI_ENABLED=true \
+  -e AI_API_KEY=your-api-key \
+  qb-monitor
+```
+
+#### Docker Compose（推荐）
+
+```bash
+# 1. 复制并编辑环境变量
+cp .env.example .env
+# 编辑 .env 文件，填入实际配置
+
+# 2. 启动服务
+docker-compose up -d
+
+# 3. 查看日志
+docker-compose logs -f
+
+# 4. 停止服务
+docker-compose down
 ```
 
 ## 工作原理
@@ -80,6 +150,8 @@ python run.py --interval 0.5
 | 依赖数 | 30+ | 4 | -87% |
 | 启动时间 | 慢 | 快 | 显著提升 |
 | 可维护性 | 低 | 高 | 显著提升 |
+| 日志安全 | 无过滤 | 敏感信息自动过滤 | 更安全 |
+| 配置方式 | 仅配置文件 | 文件 + 环境变量 | 更灵活 |
 
 ## 技术栈
 

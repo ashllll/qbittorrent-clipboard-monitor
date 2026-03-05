@@ -9,6 +9,7 @@ from .config import Config, load_config
 from .qb_client import QBClient
 from .classifier import ContentClassifier
 from .monitor import ClipboardMonitor
+from .logging_filters import SensitiveDataFilter, setup_sensitive_logging
 
 __all__ = [
     "__version__",
@@ -19,4 +20,6 @@ __all__ = [
     "QBClient",
     "ContentClassifier",
     "ClipboardMonitor",
+    "SensitiveDataFilter",
+    "setup_sensitive_logging",
 ]

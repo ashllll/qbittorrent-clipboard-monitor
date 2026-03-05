@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  qb-monitor:
+    build: .
+    container_name: qbittorrent-clipboard-monitor
+    restart: unless-stopped
+    
+    environment:
+      # qBittorrent 配置
+      - QBIT_HOST=${QBIT_HOST:-localhost}
+      - QBIT_PORT=${QBIT_PORT:-8080}
+      - QBIT_USERNAME=${QBIT_USERNAME:-admin}
+      - QBIT_PASSWORD=${QBIT_PASSWORD}
+      - QBIT_USE_HTTPS=${QBIT_USE_HTTPS:-false}
+      
+      # AI 配置（可选）
+      - AI_ENABLED=${AI_ENABLED:-false}
+      - AI_API_KEY=${AI_API_KEY}
+      - AI_MODEL=${AI_MODEL:-deepseek-chat}
+      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com/v1}
+      
+      # 应用配置
+      - CHECK_INTERVAL=${CHECK_INTERVAL:-1.0}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    
+    # 如果使用主机网络模式（Linux），可以直接访问主机的 qBittorrent
+    # network_mode: host
+    
+    # 或者使用桥接网络
+    networks:
+      - qb-monitor-network
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "python", "-c", "import qbittorrent_monitor; print('OK')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+networks:
+  qb-monitor-network:
+    driver: bridge

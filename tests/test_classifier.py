@@ -20,7 +20,7 @@ class TestContentClassifier:
         """测试电视剧规则分类"""
         classifier = ContentClassifier(mock_config)
         
-        result = classifier._rule_classify("Show S01E01 1080p")
+        result = classifier._rule_classify("Show S01E01 HDTV")
         assert result == "tv"
     
     def test_rule_classify_no_match(self, mock_config):
@@ -30,11 +30,12 @@ class TestContentClassifier:
         result = classifier._rule_classify("Unknown Content XYZ")
         assert result is None
     
-    def test_classify_empty_name(self, mock_config):
+    @pytest.mark.asyncio
+    async def test_classify_empty_name(self, mock_config):
         """测试空名称"""
         classifier = ContentClassifier(mock_config)
         
-        result = classifier.classify("")
+        result = await classifier.classify("")
         assert result == "other"
     
     @pytest.mark.asyncio

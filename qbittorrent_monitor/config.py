@@ -1,4 +1,8 @@
-"""简化版配置管理模块"""
+"""简化版配置管理模块
+
+支持从 JSON 配置文件和环境变量加载配置。
+环境变量优先级高于配置文件。
+"""
 
 import json
 import os
@@ -124,6 +128,54 @@ class Config:
             return cls.from_dict(json.load(f))
 
 
+def _load_from_env(config: Config) -> None:
+    """从环境变量加载配置，覆盖现有配置"""
+    # qBittorrent 配置
+    if host := os.getenv("QBIT_HOST"):
+        config.qbittorrent.host = host
+    if port := os.getenv("QBIT_PORT"):
+        config.qbittorrent.port = int(port)
+    if username := os.getenv("QBIT_USERNAME"):
+        config.qbittorrent.username = username
+    if password := os.getenv("QBIT_PASSWORD"):
+        config.qbittorrent.password = password
+    if use_https := os.getenv("QBIT_USE_HTTPS"):
+        config.qbittorrent.use_https = use_https.lower() in ("true", "1", "yes")
+    
+    # AI 配置
+    if ai_enabled := os.getenv("AI_ENABLED"):
+        config.ai.enabled = ai_enabled.lower() in ("true", "1", "yes")
+    if api_key := os.getenv("AI_API_KEY"):
+        config.ai.api_key = api_key
+    if model := os.getenv("AI_MODEL"):
+        config.ai.model = model
+    if base_url := os.getenv("AI_BASE_URL"):
+        config.ai.base_url = base_url
+    
+    # 应用配置
+    if interval := os.getenv("CHECK_INTERVAL"):
+        config.check_interval = float(interval)
+    if log_level := os.getenv("LOG_LEVEL"):
+        config.log_level = log_level.upper()
+
+
 def load_config(path: Optional[Path] = None) -> Config:
-    """加载配置的便捷函数"""
-    return Config.load(path)
+    """加载配置的便捷函数
+    
+    加载顺序：
+    1. 从配置文件加载（如果不存在则创建默认配置）
+    2. 从环境变量加载并覆盖
+    
+    Args:
+        path: 配置文件路径，默认使用 ~/.config/qb-monitor/config.json
+        
+    Returns:
+        配置对象
+    """
+    # 从配置文件加载
+    config = Config.load(path)
+    
+    # 从环境变量加载并覆盖
+    _load_from_env(config)
+    
+    return config
