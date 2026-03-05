@@ -5,32 +5,20 @@ from qbittorrent_monitor.config import Config, QBConfig, AIConfig, CategoryConfi
 
 
 @pytest.fixture
-def config():
-    """创建测试配置"""
+def mock_config():
+    """测试配置"""
     return Config(
-        qbittorrent=QBConfig(
-            host="localhost",
-            port=8080,
-            username="admin",
-            password="adminadmin",
-        ),
-        ai=AIConfig(
-            enabled=False,
-            api_key="",
-        ),
+        qbittorrent=QBConfig(host="localhost", port=8080, username="admin", password="admin"),
+        ai=AIConfig(enabled=False),
+        check_interval=0.1,
     )
 
 
 @pytest.fixture
-def mock_categories():
-    """模拟分类配置"""
-    return {
-        "movies": CategoryConfig(
-            save_path="/downloads/movies",
-            keywords=["Movie", "1080p"],
-        ),
-        "tv": CategoryConfig(
-            save_path="/downloads/tv",
-            keywords=["S01", "Series"],
-        ),
-    }
+def mock_config_with_ai():
+    """带AI的配置"""
+    return Config(
+        qbittorrent=QBConfig(host="localhost", port=8080, username="admin", password="admin"),
+        ai=AIConfig(enabled=True, api_key="test-key"),
+        check_interval=0.1,
+    )
