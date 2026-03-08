@@ -131,6 +131,26 @@ from .plugins import (
     invoke_hooks,
 )
 
+# CLI UI 组件（可选）
+try:
+    from .cli_ui import (
+        console,
+        StyledOutput,
+        StatsDisplay,
+        ProgressDisplay,
+        SpinnerStatus,
+        OutputFormatter,
+        print_banner,
+        print_success,
+        print_error,
+        print_warning,
+        print_info,
+        print_startup_info,
+    )
+    CLI_UI_AVAILABLE = True
+except ImportError:
+    CLI_UI_AVAILABLE = False
+
 __all__ = [
     # 版本信息
     "__version__",
@@ -245,4 +265,6 @@ __all__ = [
     "HookType",
     "register_hook",
     "invoke_hooks",
+    # CLI UI 组件
+    "CLI_UI_AVAILABLE",
 ]

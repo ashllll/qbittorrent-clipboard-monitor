@@ -176,6 +176,69 @@ async def run_web_mode(args):
     return 0
 
 
+async def validate_config(args):
+    """验证配置并测试连接"""
+    from qbittorrent_monitor.config import load_config
+    from qbittorrent_monitor.qb_client import QBClient
+    from qbittorrent_monitor.exceptions import ConfigError
+    
+    print("=" * 50)
+    print("🔍 配置验证")
+    print("=" * 50)
+    
+    config_path = Path(args.config) if args.config else None
+    config_file = config_path or Path.home() / ".config" / "qb-monitor" / "config.json"
+    
+    # 检查配置文件是否存在
+    if not config_file.exists():
+        print(f"\n❌ 配置文件不存在: {config_file}")
+        print("\n💡 提示: 运行以下命令创建配置:")
+        print(f"   python run.py --init")
+        return 1
+    
+    try:
+        # 加载配置
+        print(f"\n📁 配置文件: {config_file}")
+        config = load_config(config_path)
+        print("✅ 配置加载成功")
+        
+        # 显示配置信息
+        print(f"\n📋 配置信息:")
+        print(f"   qBittorrent: {config.qbittorrent.host}:{config.qbittorrent.port}")
+        print(f"   用户名: {config.qbittorrent.username}")
+        print(f"   HTTPS: {'是' if config.qbittorrent.use_https else '否'}")
+        print(f"   AI 分类: {'启用' if config.ai.enabled else '禁用'}")
+        print(f"   检查间隔: {config.check_interval}s")
+        print(f"   日志级别: {config.log_level}")
+        
+        # 测试 qBittorrent 连接
+        print(f"\n🔌 测试 qBittorrent 连接...")
+        try:
+            async with QBClient(config) as qb:
+                version = await qb.get_version()
+                print(f"✅ 连接成功！qBittorrent 版本: {version}")
+        except Exception as e:
+            print(f"❌ 连接失败: {e}")
+            print("\n💡 排查建议:")
+            print("   1. 确认 qBittorrent 已启动")
+            print("   2. 确认 Web UI 已启用（选项 → Web UI）")
+            print("   3. 检查用户名和密码")
+            print("   4. 检查主机地址和端口")
+            return 1
+        
+        print("\n" + "=" * 50)
+        print("✅ 配置验证通过！可以正常运行")
+        print("=" * 50)
+        return 0
+        
+    except ConfigError as e:
+        print(f"\n❌ 配置错误: {e}")
+        return 1
+    except Exception as e:
+        print(f"\n❌ 验证失败: {e}")
+        return 1
+
+
 async def main():
     """主函数"""
     import argparse
@@ -189,6 +252,10 @@ async def main():
   python run.py --config ~/.qb-monitor.json
   python run.py --interval 0.5     # 更快的检查间隔
   python run.py --log-file app.log # 记录到文件
+  
+配置工具:
+  python run.py --init             # 运行交互式配置向导
+  python run.py --validate         # 验证配置并测试连接
   
 Web 模式:
   python run.py --web              # 启动 Web 界面 (默认端口 8080)
@@ -204,9 +271,17 @@ Web 模式:
     )
     parser.add_argument("--config", "-c", help="配置文件路径")
     parser.add_argument("--interval", "-i", type=float, help="检查间隔（秒）")
-    parser.add_argument("--log-level", "-l", default="INFO", help="日志级别")
+    parser.add_argument("--log-level", "-l", default="INFO", 
+                       choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                       help="日志级别 (默认: INFO)")
     parser.add_argument("--log-file", "-f", help="日志文件路径")
     parser.add_argument("--version", "-v", action="version", version=f"%(prog)s {__version__}")
+    
+    # 配置工具
+    parser.add_argument("--init", action="store_true", 
+                       help="运行交互式配置向导")
+    parser.add_argument("--validate", action="store_true",
+                       help="验证配置并测试连接")
     
     # Web 模式参数
     parser.add_argument("--web", action="store_true", help="启动 Web 管理界面")
@@ -214,6 +289,16 @@ Web 模式:
     parser.add_argument("--web-port", type=int, default=8080, help="Web 服务器端口 (默认: 8080)")
     
     args = parser.parse_args()
+    
+    # 运行配置向导
+    if args.init:
+        from qbittorrent_monitor.config.wizard import run_wizard
+        run_wizard()
+        return 0
+    
+    # 验证配置
+    if args.validate:
+        return await validate_config(args)
     
     # 设置日志
     setup_logging(args.log_level, args.log_file)

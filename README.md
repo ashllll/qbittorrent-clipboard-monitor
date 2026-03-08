@@ -22,6 +22,11 @@
 
 ### Docker 部署（推荐）
 
+> ⚠️ **Docker 使用限制**
+> Docker 容器默认无法访问宿主机剪贴板，剪贴板监控功能在标准 Docker 模式下**不可用**。
+> 如需使用剪贴板功能，请在宿主机直接运行或使用特殊网络模式（不推荐）。
+> Web 管理界面在 Docker 中可正常使用。
+
 ```bash
 # 克隆仓库
 git clone https://github.com/ashllll/qbittorrent-clipboard-monitor.git
@@ -67,9 +72,10 @@ python run.py
     "password": "adminadmin"
   },
   "ai": {
-    "enabled": true,
+    "enabled": false,
     "api_key": "your-api-key",
-    "model": "deepseek-chat"
+    "model": "deepseek-chat",
+    "base_url": "https://api.deepseek.com/v1"
   },
   "categories": {
     "movies": {

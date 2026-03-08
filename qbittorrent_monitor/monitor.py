@@ -32,6 +32,19 @@ from .watchers import (
 )
 from .watchers.clipboard_watcher import ClipboardEvent
 
+# 导入 UI 组件（可选依赖）
+try:
+    from .cli_ui import (
+        print_startup_info, 
+        print_success, 
+        print_warning, 
+        SpinnerStatus,
+        StyledOutput
+    )
+    CLI_UI_AVAILABLE = True
+except ImportError:
+    CLI_UI_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -347,14 +360,22 @@ class ClipboardMonitor:
         logger.info("剪贴板缓存已清空")
     
     async def start(self) -> None:
-        """启动监控 - 优化版，支持智能轮询"""
+        """启动监控 - 优化版，支持智能轮询（UI 增强）"""
         # 初始化数据库（如果启用）
         if self._db_enabled and not self._external_db:
             try:
-                await self.get_database()
-                logger.info("数据持久化已启用")
+                if CLI_UI_AVAILABLE:
+                    with SpinnerStatus("正在初始化数据库..."):
+                        await self.get_database()
+                    print_success("数据持久化已启用")
+                else:
+                    await self.get_database()
+                    logger.info("数据持久化已启用")
             except Exception as e:
-                logger.warning(f"数据库初始化失败: {e}")
+                if CLI_UI_AVAILABLE:
+                    print_warning(f"数据库初始化失败: {e}")
+                else:
+                    logger.warning(f"数据库初始化失败: {e}")
                 self._db_enabled = False
         
         self._running = True
@@ -365,14 +386,29 @@ class ClipboardMonitor:
         metrics_module.set_monitor_running(True)
         metrics_module.set_clipboard_check_interval(self.pacing.active_interval)
         
-        print("=" * 50)
-        print("剪贴板监控已启动 (重构版)")
-        print(f"活跃检查间隔: {self.pacing.active_interval}秒")
-        print(f"空闲检查间隔: {self.pacing.idle_interval}秒")
-        print(f"防抖窗口: {self._debounce_filter.debounce_seconds}秒")
-        print(f"最大磁力链接长度: {SAFE_LIMITS['max_magnet_length']} 字符")
-        print("按 Ctrl+C 停止")
-        print("=" * 50)
+        # 使用新的 UI 显示启动信息
+        if CLI_UI_AVAILABLE:
+            config_info = {
+                "host": f"{self.config.qbittorrent.host}:{self.config.qbittorrent.port}",
+                "ai_enabled": self.config.ai.enabled if hasattr(self.config, 'ai') else False,
+                "database_enabled": self._db_enabled,
+                "database_path": self._db_path if self._db_enabled else None,
+                "check_interval": self.pacing.active_interval,
+                "metrics_enabled": self.config.metrics.enabled if hasattr(self.config, 'metrics') else False,
+                "metrics_host": getattr(self.config.metrics, 'host', None) if hasattr(self.config, 'metrics') else None,
+                "metrics_port": getattr(self.config.metrics, 'port', None) if hasattr(self.config, 'metrics') else None,
+            }
+            print_startup_info(config_info)
+        else:
+            # Fallback: 标准文本输出
+            print("=" * 50)
+            print("剪贴板监控已启动 (重构版)")
+            print(f"活跃检查间隔: {self.pacing.active_interval}秒")
+            print(f"空闲检查间隔: {self.pacing.idle_interval}秒")
+            print(f"防抖窗口: {self._debounce_filter.debounce_seconds}秒")
+            print(f"最大磁力链接长度: {SAFE_LIMITS['max_magnet_length']} 字符")
+            print("按 Ctrl+C 停止")
+            print("=" * 50)
         
         try:
             while self._running:
@@ -590,6 +626,10 @@ class ClipboardMonitor:
                 self._processed.popitem(last=False)
             metrics_module.record_torrent_added_success(category=category)
             
+            # 使用新的 UI 显示成功信息
+            if CLI_UI_AVAILABLE:
+                StyledOutput.magnet_added(name, category, method=classification_result.method)
+            
             # 触发回调
             for handler in self._handlers:
                 try:
@@ -600,6 +640,10 @@ class ClipboardMonitor:
             status = "failed"
             self.stats.failed_adds += 1
             metrics_module.record_torrent_added_failed(category=category, reason="api")
+            
+            # 使用新的 UI 显示错误信息
+            if CLI_UI_AVAILABLE:
+                StyledOutput.error(f"添加失败: {display_name}")
         
         # 记录到数据库
         if self._db_enabled:

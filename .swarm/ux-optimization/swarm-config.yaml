@@ -1,0 +1,143 @@
+# 蜂群配置 - 用户体验优化专项
+# 使用 ruflo/claude-flow 蜂群模式
+
+swarm:
+  name: "qb-monitor-ux-optimization"
+  topology: "mesh"  # 网状拓扑，适合并行分析和协作
+  max_agents: 5
+  strategy: "adaptive"
+
+agents:
+  - id: "ux-analyzer"
+    name: "UX 体验分析师"
+    type: "analyst"
+    capabilities: 
+      - "user-experience-analysis"
+      - "cli-interaction-review"
+      - "pain-point-identification"
+    task: |
+      分析 qbittorrent-clipboard-monitor 项目的用户体验问题：
+      1. 检查 run.py 的命令行参数设计和帮助信息
+      2. 检查监控器启动时的用户反馈和状态显示
+      3. 检查错误提示的友好程度
+      4. 检查日志输出的可读性
+      5. 识别用户交互中的痛点
+      
+      请阅读以下文件并提供详细分析报告：
+      - run.py
+      - qbittorrent_monitor/monitor.py
+      - qbittorrent_monitor/config/
+      
+      输出格式：Markdown 报告，包含问题列表和改进建议
+
+  - id: "cli-designer"
+    name: "CLI 交互设计师"
+    type: "coder"
+    capabilities:
+      - "cli-design"
+      - "user-interface"
+      - "python-argparse"
+    task: |
+      优化 qbittorrent-clipboard-monitor 的命令行交互体验：
+      1. 检查并改进命令行参数的设计
+      2. 优化启动时的欢迎信息和状态显示
+      3. 改进帮助信息的清晰度和完整性
+      4. 添加更有用的进度指示和状态反馈
+      5. 考虑添加彩色输出支持（使用 colorama/rich）
+      
+      重点关注文件：
+      - run.py
+      - qbittorrent_monitor/monitor.py
+      
+      输出：具体的代码改进建议
+
+  - id: "config-expert"
+    name: "配置管理专家"
+    type: "architect"
+    capabilities:
+      - "configuration-design"
+      - "user-onboarding"
+      - "validation"
+    task: |
+      优化 qbittorrent-clipboard-monitor 的配置管理体验：
+      1. 检查配置文件的易用性和文档
+      2. 改进首次使用的引导体验
+      3. 优化配置验证的错误提示
+      4. 检查环境变量的易用性
+      5. 建议更好的配置管理方式
+      
+      重点关注：
+      - config.example.json
+      - .env.example
+      - qbittorrent_monitor/config/
+      
+      输出：配置体验改进方案
+
+  - id: "feedback-designer"
+    name: "反馈体验设计师"
+    type: "designer"
+    capabilities:
+      - "user-feedback"
+      - "status-indicators"
+      - "progress-reporting"
+    task: |
+      优化 qbittorrent-clipboard-monitor 的运行反馈体验：
+      1. 改进磁力链接检测时的用户通知
+      2. 优化分类结果的展示方式
+      3. 添加更清晰的统计信息显示
+      4. 改进错误信息的可读性
+      5. 考虑添加音效/桌面通知支持
+      
+      重点关注：
+      - qbittorrent_monitor/monitor.py
+      - qbittorrent_monitor/classifier.py
+      
+      输出：反馈体验改进建议
+
+  - id: "doc-specialist"
+    name: "文档与帮助专家"
+    type: "documenter"
+    capabilities:
+      - "technical-writing"
+      - "help-systems"
+      - "onboarding-guides"
+    task: |
+      优化 qbittorrent-clipboard-monitor 的文档和帮助体验：
+      1. 检查 README.md 的易读性
+      2. 改进 QUICKSTART.md 的快速开始指南
+      3. 检查错误提示中的帮助信息
+      4. 建议添加交互式配置向导
+      5. 改进故障排除指南
+      
+      重点关注：
+      - README.md
+      - QUICKSTART.md
+      - 错误提示和帮助信息
+      
+      输出：文档改进方案
+
+workflow:
+  phase_1_analysis:
+    description: "并行执行 UX 分析"
+    mode: "parallel"
+    agents: ["ux-analyzer", "cli-designer", "config-expert", "feedback-designer", "doc-specialist"]
+  
+  phase_2_synthesis:
+    description: "整合分析结果"
+    mode: "sequential"
+    dependencies: ["phase_1_analysis"]
+    agent: "ux-analyzer"
+    task: "整合所有分析结果，生成统一的 UX 优化报告"
+  
+  phase_3_implementation:
+    description: "实施优化"
+    mode: "parallel"
+    dependencies: ["phase_2_synthesis"]
+    agents: ["cli-designer", "config-expert", "feedback-designer"]
+
+coordination:
+  memory_namespace: "ux-optimization"
+  shared_keys:
+    - "analysis-results"
+    - "improvement-priorities"
+    - "implementation-plan"

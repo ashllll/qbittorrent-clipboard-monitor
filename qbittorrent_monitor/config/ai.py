@@ -39,10 +39,10 @@ class AIConfig:
         ...     max_retries=3
         ... )
     """
-    enabled: bool = True  # 默认启用（向后兼容）
+    enabled: bool = False  # 默认禁用 AI（避免首次运行报错）
     api_key: str = ""
     model: str = "deepseek-chat"
-    base_url: str = DEFAULT_AI_BASE_URL
+    base_url: str = "https://api.deepseek.com/v1"  # 与模型匹配的默认 URL
     timeout: int = DEFAULT_AI_TIMEOUT
     max_retries: int = DEFAULT_AI_MAX_RETRIES
 
