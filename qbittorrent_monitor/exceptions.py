@@ -1,5 +1,7 @@
 """核心异常定义"""
 
+from __future__ import annotations
+
 
 class QBMonitorError(Exception):
     """基础异常"""

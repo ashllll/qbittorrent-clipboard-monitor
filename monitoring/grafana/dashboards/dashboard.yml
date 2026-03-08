@@ -1,0 +1,16 @@
+# Grafana 仪表板配置
+# 此文件会被自动加载，配置仪表板提供者
+
+apiVersion: 1
+
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

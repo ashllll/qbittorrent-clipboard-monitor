@@ -1,0 +1,76 @@
+# Bandit Security Linter Configuration
+# https://bandit.readthedocs.io/en/latest/config.html
+
+# 跳过断言检查 (B101) - 测试中使用 assert 是常见做法
+# 跳过随机数检查 (B311) - 非安全场景使用 random 是可接受的
+skips:
+  - B101  # Use of assert detected
+  - B311  # Standard pseudo-random generators are not suitable for security/cryptographic purposes
+
+# 严重性级别: LOW, MEDIUM, HIGH
+# 置信度级别: LOW, MEDIUM, HIGH
+severity: MEDIUM
+confidence: MEDIUM
+
+# 排除的目录
+exclude_dirs:
+  - tests
+  - test
+  - tests_unit
+  - tests_integration
+  - tests_e2e
+  - test_*
+  - *_tests
+  - .venv
+  - venv
+  - __pycache__
+  - .git
+  - build
+  - dist
+  - .mypy_cache
+  - .pytest_cache
+  - .tox
+  - .nox
+  - htmlcov
+
+# 扫描包含的文件模式
+include:
+  - '*.py'
+
+# 排除的文件模式
+exclude:
+  - 'test_*.py'
+  - '*_test.py'
+  - 'conftest.py'
+  - 'setup.py'
+  - 'run.py'
+
+# 插件配置
+# 可以禁用特定插件
+# plugins:
+#   B301:
+#     check_typeddict: false
+
+# 按严重性排序报告
+byseverity: true
+
+# 按置信度排序报告
+byconfidence: true
+
+# 输出格式: json, csv, xml, screen, txt, html
+format: screen
+
+# 输出文件 (可选)
+# output: bandit-report.json
+
+# 递归扫描
+recursive: true
+
+# 扫描 agglib 模式
+# agglib: true
+
+# 静默模式
+quiet: false
+
+# 详细模式
+verbose: true

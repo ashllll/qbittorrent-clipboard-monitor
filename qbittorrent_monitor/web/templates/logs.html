@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block title %}日志 - qBittorrent 剪贴板监控{% endblock %}
+
+{% block content %}
+<!-- 页面标题 -->
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">日志</h1>
+    <p class="text-gray-600 dark:text-gray-400">查看应用运行日志和调试信息</p>
+</div>
+
+<!-- 日志工具栏 -->
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 mb-6 border border-gray-100 dark:border-gray-700">
+    <div class="flex flex-wrap items-center gap-4">
+        <div class="flex items-center space-x-2">
+            <span class="text-sm text-gray-600 dark:text-gray-400">日志级别:</span>
+            <select id="log-level-filter" class="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <option value="ALL">全部</option>
+                <option value="DEBUG">DEBUG</option>
+                <option value="INFO" selected>INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+                <option value="CRITICAL">CRITICAL</option>
+            </select>
+        </div>
+        
+        <div class="flex-1 min-w-[200px]">
+            <div class="relative">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                <input type="text" id="log-search" placeholder="搜索日志..." 
+                    class="w-full pl-9 pr-4 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+            </div>
+        </div>
+        
+        <div class="flex items-center space-x-2">
+            <label class="flex items-center space-x-2 cursor-pointer text-sm text-gray-600 dark:text-gray-400">
+                <input type="checkbox" id="auto-scroll" checked class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                <span>自动滚动</span>
+            </label>
+        </div>
+        
+        <div class="flex space-x-2">
+            <button onclick="loadLogs()" class="px-3 py-1.5 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-lg text-sm transition-colors">
+                <i class="fas fa-sync-alt mr-1"></i>刷新
+            </button>
+            <button onclick="clearLogs()" class="px-3 py-1.5 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 border border-red-300 hover:border-red-400 dark:border-red-600 dark:hover:border-red-500 rounded-lg text-sm transition-colors">
+                <i class="fas fa-trash-alt mr-1"></i>清空
+            </button>
+            <button onclick="exportLogs()" class="px-3 py-1.5 text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 border border-primary-300 hover:border-primary-400 dark:border-primary-600 dark:hover:border-primary-500 rounded-lg text-sm transition-colors">
+                <i class="fas fa-download mr-1"></i>导出
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 日志内容 -->
+<div class="bg-gray-900 rounded-xl shadow-md border border-gray-800 overflow-hidden">
+    <!-- 表头 -->
+    <div class="px-4 py-2 bg-gray-800 border-b border-gray-700 flex items-center space-x-4 text-xs text-gray-400 font-mono">
+        <span class="w-20 shrink-0">时间</span>
+        <span class="w-16 shrink-0">级别</span>
+        <span class="w-32 shrink-0">来源</span>
+        <span class="flex-1">消息</span>
+    </div>
+    
+    <!-- 日志列表 -->
+    <div id="log-container" class="h-[600px] overflow-y-auto p-0 font-mono text-sm">
+        <div id="logs-empty" class="flex items-center justify-center h-full text-gray-500">
+            <div class="text-center">
+                <i class="fas fa-terminal text-4xl mb-2 block opacity-50"></i>
+                <p>暂无日志</p>
+            </div>
+        </div>
+        <div id="logs-content" class="hidden">
+            <!-- 动态生成 -->
+        </div>
+    </div>
+</div>
+
+<!-- 日志统计 -->
+<div class="mt-4 grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-3 border border-gray-100 dark:border-gray-700">
+        <p class="text-xs text-gray-500 dark:text-gray-400">总计</p>
+        <p id="count-total" class="text-lg font-semibold text-gray-900 dark:text-white">0</p>
+    </div>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-3 border border-gray-100 dark:border-gray-700">
+        <p class="text-xs text-gray-500 dark:text-gray-400">DEBUG</p>
+        <p id="count-debug" class="text-lg font-semibold text-gray-500">0</p>
+    </div>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-3 border border-gray-100 dark:border-gray-700">
+        <p class="text-xs text-gray-500 dark:text-gray-400">INFO</p>
+        <p id="count-info" class="text-lg font-semibold text-blue-500">0</p>
+    </div>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-3 border border-gray-100 dark:border-gray-700">
+        <p class="text-xs text-gray-500 dark:text-gray-400">WARNING</p>
+        <p id="count-warning" class="text-lg font-semibold text-yellow-500">0</p>
+    </div>
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-3 border border-gray-100 dark:border-gray-700">
+        <p class="text-xs text-gray-500 dark:text-gray-400">ERROR</p>
+        <p id="count-error" class="text-lg font-semibold text-red-500">0</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let allLogs = [];
+    let filteredLogs = [];
+    let logCounts = { DEBUG: 0, INFO: 0, WARNING: 0, ERROR: 0, CRITICAL: 0 };
+
+    // 加载日志
+    async function loadLogs() {
+        try {
+            const data = await apiGet('/api/logs?limit=200');
+            allLogs = data.logs || [];
+            applyFilters();
+        } catch (error) {
+            console.error('加载日志失败:', error);
+            showToast('加载日志失败', 'error');
+        }
+    }
+
+    // 应用筛选
+    function applyFilters() {
+        const levelFilter = document.getElementById('log-level-filter').value;
+        const searchTerm = document.getElementById('log-search').value.toLowerCase();
+
+        // 重置计数
+        logCounts = { DEBUG: 0, INFO: 0, WARNING: 0, ERROR: 0, CRITICAL: 0 };
+
+        filteredLogs = allLogs.filter(log => {
+            // 统计
+            logCounts[log.level] = (logCounts[log.level] || 0) + 1;
+
+            // 级别筛选
+            if (levelFilter !== 'ALL') {
+                const levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'];
+                const filterIndex = levels.indexOf(levelFilter);
+                const logIndex = levels.indexOf(log.level);
+                if (logIndex < filterIndex) {
+                    return false;
+                }
+            }
+
+            // 搜索筛选
+            if (searchTerm) {
+                const searchIn = `${log.message} ${log.source}`.toLowerCase();
+                if (!searchIn.includes(searchTerm)) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        renderLogs();
+        updateCounts();
+    }
+
+    // 渲染日志
+    function renderLogs() {
+        const container = document.getElementById('log-container');
+        const content = document.getElementById('logs-content');
+        const empty = document.getElementById('logs-empty');
+        const autoScroll = document.getElementById('auto-scroll').checked;
+
+        if (filteredLogs.length === 0) {
+            content.classList.add('hidden');
+            empty.classList.remove('hidden');
+            return;
+        }
+
+        empty.classList.add('hidden');
+        content.classList.remove('hidden');
+
+        content.innerHTML = filteredLogs.map(log => `
+            <div class="flex items-start space-x-4 px-4 py-1.5 hover:bg-gray-800/50 transition-colors border-b border-gray-800/50 last:border-0">
+                <span class="w-20 shrink-0 text-gray-500 text-xs">${log.timestamp}</span>
+                <span class="w-16 shrink-0 text-xs font-bold ${getLevelClass(log.level)}">${log.level}</span>
+                <span class="w-32 shrink-0 text-gray-500 text-xs truncate" title="${escapeHtml(log.source)}">${escapeHtml(log.source)}</span>
+                <span class="flex-1 text-gray-300 text-xs break-all">${escapeHtml(log.message)}</span>
+            </div>
+        `).join('');
+
+        // 自动滚动
+        if (autoScroll) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+
+    // 获取级别样式
+    function getLevelClass(level) {
+        switch (level) {
+            case 'DEBUG': return 'text-gray-500';
+            case 'INFO': return 'text-blue-400';
+            case 'WARNING': return 'text-yellow-400';
+            case 'ERROR': return 'text-red-400';
+            case 'CRITICAL': return 'text-red-500 bg-red-900/30 px-1 rounded';
+            default: return 'text-gray-400';
+        }
+    }
+
+    // 更新统计
+    function updateCounts() {
+        document.getElementById('count-total').textContent = filteredLogs.length;
+        document.getElementById('count-debug').textContent = logCounts.DEBUG || 0;
+        document.getElementById('count-info').textContent = logCounts.INFO || 0;
+        document.getElementById('count-warning').textContent = logCounts.WARNING || 0;
+        document.getElementById('count-error').textContent = (logCounts.ERROR || 0) + (logCounts.CRITICAL || 0);
+    }
+
+    // 清空日志
+    function clearLogs() {
+        allLogs = [];
+        filteredLogs = [];
+        logCounts = { DEBUG: 0, INFO: 0, WARNING: 0, ERROR: 0, CRITICAL: 0 };
+        renderLogs();
+        updateCounts();
+        showToast('日志已清空', 'success');
+    }
+
+    // 导出日志
+    function exportLogs() {
+        const text = filteredLogs.map(log => 
+            `[${log.timestamp}] ${log.level} ${log.source}: ${log.message}`
+        ).join('\n');
+        
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `qb-monitor-logs-${new Date().toISOString().slice(0, 10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast('日志已导出', 'success');
+    }
+
+    // HTML 转义
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // 事件监听
+    document.getElementById('log-level-filter').addEventListener('change', applyFilters);
+    document.getElementById('log-search').addEventListener('input', applyFilters);
+
+    // WebSocket 实时日志
+    window.addEventListener('ws-message', (event) => {
+        const data = event.detail;
+        
+        if (data.type === 'log') {
+            // 添加到日志列表
+            allLogs.unshift(data.data);
+            if (allLogs.length > 500) {
+                allLogs.pop();
+            }
+            applyFilters();
+        } else if (data.type === 'logs') {
+            // 批量日志（初始加载）
+            allLogs = data.data.reverse();
+            applyFilters();
+        }
+    });
+
+    // 页面加载
+    document.addEventListener('DOMContentLoaded', () => {
+        loadLogs();
+        
+        // 请求初始日志
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ action: 'get_logs' }));
+        }
+    });
+</script>
+{% endblock %}

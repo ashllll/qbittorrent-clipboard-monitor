@@ -2,43 +2,183 @@ version: '3.8'
 
 services:
   qb-monitor:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        # 构建参数 - 可通过环境变量覆盖
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
+        ALPINE_VERSION: ${ALPINE_VERSION:-3.19}
+        APP_VERSION: ${APP_VERSION:-3.0.0}
+        BUILD_DATE: ${BUILD_DATE:-}
+        VCS_REF: ${VCS_REF:-}
+      # 多架构构建支持
+      platforms:
+        - linux/amd64
+        - linux/arm64
+        - linux/arm/v7
+    
+    image: qbittorrent-clipboard-monitor:${APP_VERSION:-latest}
     container_name: qbittorrent-clipboard-monitor
+    
+    # 重启策略：除非手动停止，否则始终重启
     restart: unless-stopped
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
     
     environment:
       # qBittorrent 配置
       - QBIT_HOST=${QBIT_HOST:-localhost}
       - QBIT_PORT=${QBIT_PORT:-8080}
       - QBIT_USERNAME=${QBIT_USERNAME:-admin}
-      - QBIT_PASSWORD=${QBIT_PASSWORD}
+      - QBIT_PASSWORD=${QBIT_PASSWORD:-}
       - QBIT_USE_HTTPS=${QBIT_USE_HTTPS:-false}
       
       # AI 配置（可选）
       - AI_ENABLED=${AI_ENABLED:-false}
-      - AI_API_KEY=${AI_API_KEY}
+      - AI_API_KEY=${AI_API_KEY:-}
       - AI_MODEL=${AI_MODEL:-deepseek-chat}
       - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com/v1}
       
       # 应用配置
       - CHECK_INTERVAL=${CHECK_INTERVAL:-1.0}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
+      # 时区设置
+      - TZ=${TZ:-UTC}
     
-    # 如果使用主机网络模式（Linux），可以直接访问主机的 qBittorrent
+    # 配置文件挂载（可选）
+    volumes:
+      # 配置文件
+      - type: bind
+        source: ${CONFIG_PATH:-./config.json}
+        target: /app/config.json
+        read_only: true
+        bind:
+          create_host_path: false
+      # 日志目录
+      - type: bind
+        source: ${LOG_PATH:-./logs}
+        target: /app/logs
+        bind:
+          create_host_path: true
+    
+    # 网络配置选项（二选一）
+    # 选项1: 主机网络模式（Linux，可直接访问主机 qBittorrent）
     # network_mode: host
     
-    # 或者使用桥接网络
+    # 选项2: 桥接网络（默认）
     networks:
       - qb-monitor-network
     
-    # 健康检查
+    # DNS 配置
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    
+    # 健康检查配置
     healthcheck:
-      test: ["CMD", "python", "-c", "import qbittorrent_monitor; print('OK')"]
+      test: ["CMD", "python", "-c", "
+import sys;
+from qbittorrent_monitor import __version__;
+print(f'Healthy - v{__version__}');
+sys.exit(0)
+"]
       interval: 30s
-      timeout: 5s
-      start_period: 5s
+      timeout: 10s
+      start_period: 10s
       retries: 3
+      disable: false
+    
+    # 日志配置
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,environment"
+        env: "LOG_LEVEL"
+    
+    # 安全选项
+    security_opt:
+      - no-new-privileges:true
+    
+    # 只读根文件系统（增强安全性）
+    read_only: true
+    
+    # 临时文件系统（用于需要写入的目录）
+    tmpfs:
+      - /tmp:noexec,nosuid,size=50m
+    
+    # 能力降级（最小权限原则）
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+
+  # 可选：开发模式服务
+  qb-monitor-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    
+    image: qbittorrent-clipboard-monitor:dev
+    container_name: qbittorrent-clipboard-monitor-dev
+    
+    profiles:
+      - dev
+    
+    restart: "no"
+    
+    environment:
+      - QBIT_HOST=${QBIT_HOST:-host.docker.internal}
+      - QBIT_PORT=${QBIT_PORT:-8080}
+      - QBIT_USERNAME=${QBIT_USERNAME:-admin}
+      - QBIT_PASSWORD=${QBIT_PASSWORD:-}
+      - QBIT_USE_HTTPS=${QBIT_USE_HTTPS:-false}
+      - AI_ENABLED=${AI_ENABLED:-false}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - CHECK_INTERVAL=${CHECK_INTERVAL:-1.0}
+      - LOG_LEVEL=DEBUG
+      - TZ=${TZ:-UTC}
+    
+    volumes:
+      # 开发模式：挂载源代码以便热重载
+      - type: bind
+        source: ./qbittorrent_monitor
+        target: /app/qbittorrent_monitor
+      - type: bind
+        source: ./run.py
+        target: /app/run.py
+      - type: bind
+        source: ${CONFIG_PATH:-./config.json}
+        target: /app/config.json
+        read_only: true
+    
+    networks:
+      - qb-monitor-network
+    
+    # 交互式终端（开发调试用）
+    stdin_open: true
+    tty: true
+    
+    # 开发模式命令
+    command: ["--log-level", "DEBUG"]
 
 networks:
   qb-monitor-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16

@@ -1,0 +1,158 @@
+/* 自定义样式补充 */
+
+/* 平滑滚动 */
+html {
+    scroll-behavior: smooth;
+}
+
+/* 选中文字样式 */
+::selection {
+    background-color: rgba(59, 130, 246, 0.3);
+    color: inherit;
+}
+
+.dark ::selection {
+    background-color: rgba(96, 165, 250, 0.3);
+}
+
+/* 输入框焦点样式 */
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+}
+
+/* 按钮点击效果 */
+button:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+/* 卡片悬停效果 */
+.card-hover {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.dark .card-hover:hover {
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+/* 加载动画 */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+/* 脉冲动画 */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 渐入动画 */
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+}
+
+/* 抖动动画（错误提示） */
+@keyframes shake {
+    0%, 100% {
+        transform: translateX(0);
+    }
+    10%, 30%, 50%, 70%, 90% {
+        transform: translateX(-5px);
+    }
+    20%, 40%, 60%, 80% {
+        transform: translateX(5px);
+    }
+}
+
+.animate-shake {
+    animation: shake 0.5s ease-in-out;
+}
+
+/* 表格行悬停 */
+.table-row-hover {
+    transition: background-color 0.15s;
+}
+
+/* 标签样式 */
+.tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+/* 代码块样式 */
+.code-block {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    background-color: #1f2937;
+    color: #e5e7eb;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+}
+
+/* 滚动条样式 */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 3px;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #475569;
+}
+
+/* 响应式字体大小 */
+@media (max-width: 640px) {
+    html {
+        font-size: 14px;
+    }
+}
+
+/* 打印样式 */
+@media print {
+    .no-print {
+        display: none !important;
+    }
+}

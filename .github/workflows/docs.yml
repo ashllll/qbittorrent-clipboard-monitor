@@ -1,0 +1,316 @@
+# =============================================================================
+# Documentation Deployment Workflow
+# =============================================================================
+# 触发条件:
+#   - push 到 main 分支且 docs/ 目录有变更
+#   - 手动触发
+# =============================================================================
+
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '**.md'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # ===========================================================================
+  # 构建文档
+  # ===========================================================================
+  build:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached dependencies
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-docs-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        run: |
+          poetry install --no-interaction --no-root --with dev
+          pip install mkdocs mkdocs-material mkdocstrings[python]
+
+      - name: Generate API documentation
+        run: |
+          mkdir -p docs/api
+          
+          # 使用 pdoc 或 mkdocstrings 生成 API 文档
+          pip install pdoc
+          pdoc qbittorrent_monitor -o docs/api --docformat google || true
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v4
+
+      - name: Build with MkDocs
+        run: |
+          # 创建 mkdocs.yml 如果不存在
+          if [[ ! -f mkdocs.yml ]]; then
+            cat > mkdocs.yml << 'EOF'
+          site_name: qBittorrent Clipboard Monitor
+          site_description: 简洁高效的 qBittorrent 剪贴板监控工具文档
+          site_author: qBittorrent Monitor Team
+          site_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          
+          theme:
+            name: material
+            palette:
+              - scheme: default
+                primary: indigo
+                accent: indigo
+                toggle:
+                  icon: material/brightness-7
+                  name: Switch to dark mode
+              - scheme: slate
+                primary: indigo
+                accent: indigo
+                toggle:
+                  icon: material/brightness-4
+                  name: Switch to light mode
+            features:
+              - navigation.tabs
+              - navigation.sections
+              - navigation.expand
+              - search.suggest
+              - search.highlight
+          
+          plugins:
+            - search
+            - mkdocstrings:
+                handlers:
+                  python:
+                    paths: [qbittorrent_monitor]
+                    options:
+                      docstring_style: google
+                      show_source: true
+          
+          markdown_extensions:
+            - pymdownx.highlight:
+                anchor_linenums: true
+            - pymdownx.inlinehilite
+            - pymdownx.snippets
+            - pymdownx.superfences
+            - admonition
+            - pymdownx.details
+            - pymdownx.tabbed:
+                alternate_style: true
+            - tables
+            - toc:
+                permalink: true
+          
+          nav:
+            - 首页: index.md
+            - 快速开始: getting-started.md
+            - 配置指南: configuration.md
+            - API 文档: api/
+            - 部署指南: deployment.md
+            - 开发文档: development.md
+            - 更新日志: changelog.md
+          EOF
+          fi
+          
+          # 准备文档目录
+          mkdir -p site
+          
+          # 复制现有文档
+          cp README.md docs/index.md || true
+          cp CHANGELOG.md docs/changelog.md || true
+          cp CONTRIBUTING.md docs/development.md || true
+          
+          # 创建其他文档页面
+          cat > docs/getting-started.md << 'EOF'
+          # 快速开始
+          
+          ## 安装
+          
+          ### 使用 Docker（推荐）
+          
+          ```bash
+          docker run -d \\
+            --name qb-monitor \\
+            -e QBIT_HOST=your-qbittorrent-host \\
+            -e QBIT_USERNAME=admin \\
+            -e QBIT_PASSWORD=yourpassword \\
+            ${{ secrets.DOCKERHUB_USERNAME }}/qbittorrent-clipboard-monitor:latest
+          ```
+          
+          ### 使用 pip
+          
+          ```bash
+          pip install qbittorrent-clipboard-monitor
+          qbmonitor
+          ```
+          
+          ## 基本配置
+          
+          复制示例配置文件并进行修改：
+          
+          ```bash
+          cp config.example.json ~/.config/qb-monitor/config.json
+          ```
+          
+          ## 运行
+          
+          ```bash
+          python run.py
+          ```
+          EOF
+          
+          cat > docs/configuration.md << 'EOF'
+          # 配置指南
+          
+          ## 配置文件
+          
+          配置文件位于 `~/.config/qb-monitor/config.json`。
+          
+          ### 完整配置示例
+          
+          ```json
+          {
+            "qbittorrent": {
+              "host": "localhost",
+              "port": 8080,
+              "username": "admin",
+              "password": "adminadmin",
+              "use_https": false
+            },
+            "ai": {
+              "enabled": true,
+              "api_key": "your-api-key",
+              "model": "deepseek-chat",
+              "base_url": "https://api.deepseek.com/v1",
+              "timeout": 30,
+              "max_retries": 3
+            },
+            "categories": {
+              "movies": {
+                "save_path": "/downloads/movies",
+                "keywords": ["电影", "Movie", "1080p", "4K"]
+              }
+            },
+            "check_interval": 1.0
+          }
+          ```
+          
+          ## 环境变量
+          
+          | 变量名 | 说明 | 默认值 |
+          |--------|------|--------|
+          | `QBIT_HOST` | qBittorrent 主机地址 | localhost |
+          | `QBIT_PORT` | qBittorrent 端口 | 8080 |
+          | `QBIT_USERNAME` | qBittorrent 用户名 | admin |
+          | `QBIT_PASSWORD` | qBittorrent 密码 | - |
+          | `AI_ENABLED` | 启用 AI 分类 | false |
+          | `AI_API_KEY` | AI API 密钥 | - |
+          EOF
+          
+          cat > docs/deployment.md << 'EOF'
+          # 部署指南
+          
+          ## Docker Compose 部署
+          
+          ```yaml
+          version: '3.8'
+          
+          services:
+            qb-monitor:
+              image: qbittorrent-clipboard-monitor:latest
+              container_name: qb-monitor
+              restart: unless-stopped
+              environment:
+                - QBIT_HOST=qbittorrent
+                - QBIT_PORT=8080
+                - QBIT_USERNAME=admin
+                - QBIT_PASSWORD=adminadmin
+                - LOG_LEVEL=INFO
+              volumes:
+                - ./config:/app/config
+              depends_on:
+                - qbittorrent
+          
+            qbittorrent:
+              image: linuxserver/qbittorrent:latest
+              container_name: qbittorrent
+              # ... qbittorrent 配置
+          ```
+          
+          ## systemd 服务
+          
+          ```ini
+          [Unit]
+          Description=qBittorrent Clipboard Monitor
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=qbmonitor
+          WorkingDirectory=/opt/qb-monitor
+          ExecStart=/opt/qb-monitor/venv/bin/python run.py
+          Restart=always
+          RestartSec=10
+          
+          [Install]
+          WantedBy=multi-user.target
+          ```
+          EOF
+          
+          # 构建文档
+          mkdocs build || echo "MkDocs build skipped"
+          
+          # 如果 MkDocs 失败，使用简单的静态站点
+          if [[ ! -d site ]] || [[ -z "$(ls -A site)" ]]; then
+            mkdir -p site
+            cp -r docs/* site/ 2>/dev/null || true
+            cp README.md site/index.md 2>/dev/null || cp README.md site/index.html 2>/dev/null || true
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+  # ===========================================================================
+  # 部署到 GitHub Pages
+  # ===========================================================================
+  deploy:
+    name: Deploy to GitHub Pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

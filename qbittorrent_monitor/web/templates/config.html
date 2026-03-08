@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}配置 - qBittorrent 剪贴板监控{% endblock %}
+
+{% block content %}
+<!-- 页面标题 -->
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">配置</h1>
+    <p class="text-gray-600 dark:text-gray-400">管理应用设置和连接参数</p>
+</div>
+
+<!-- 配置表单 -->
+<div class="max-w-3xl mx-auto space-y-6">
+    <!-- qBittorrent 配置 -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+        <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+            <i class="fas fa-server mr-2 text-primary-500"></i>
+            qBittorrent 连接
+        </h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">主机地址</label>
+                <input type="text" id="qb-host" value="{{ config.qbittorrent.host }}"
+                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">端口</label>
+                <input type="number" id="qb-port" value="{{ config.qbittorrent.port }}"
+                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">用户名</label>
+                <input type="text" id="qb-username" value="{{ config.qbittorrent.username }}"
+                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">密码</label>
+                <input type="password" id="qb-password" placeholder="••••••••"
+                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">留空表示不修改</p>
+            </div>
+            
+            <div class="md:col-span-2">
+                <label class="flex items-center space-x-3 cursor-pointer">
+                    <input type="checkbox" id="qb-https" {% if config.qbittorrent.use_https %}checked{% endif %}
+                        class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                    <span class="text-gray-700 dark:text-gray-300">使用 HTTPS 连接</span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+            <button onclick="testConnection()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">
+                <i class="fas fa-plug mr-2"></i>测试连接
+            </button>
+            <span id="test-result" class="ml-3 text-sm"></span>
+        </div>
+    </div>
+    
+    <!-- AI 配置 -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+        <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+            <i class="fas fa-brain mr-2 text-primary-500"></i>
+            AI 分类设置
+        </h2>
+        
+        <div class="mb-4">
+            <label class="flex items-center space-x-3 cursor-pointer">
+                <input type="checkbox" id="ai-enabled" {% if config.ai.enabled %}checked{% endif %}
+                    class="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500">
+                <span class="text-gray-700 dark:text-gray-300">启用 AI 自动分类</span>
+            </label>
+        </div>
+        
+        <div id="ai-settings" class="space-y-4 {% if not config.ai.enabled %}opacity-50 pointer-events-none{% endif %}">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">API Key</label>
+                    <input type="password" id="ai-api-key" placeholder="sk-..."
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">留空表示不修改</p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">模型</label>
+                    <input type="text" id="ai-model" value="{{ config.ai.model }}"
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">API 地址</label>
+                    <input type="text" id="ai-base-url" value="{{ config.ai.base_url }}"
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">超时时间（秒）</label>
+                    <input type="number" id="ai-timeout" value="{{ config.ai.timeout }}"
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">最大重试次数</label>
+                    <input type="number" id="ai-max-retries" value="{{ config.ai.max_retries }}"
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 应用配置 -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+        <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+            <i class="fas fa-cog mr-2 text-primary-500"></i>
+            应用设置
+        </h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">检查间隔（秒）</label>
+                <input type="number" id="check-interval" value="{{ config.check_interval }}" step="0.1" min="0.1" max="60"
+                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">剪贴板检查间隔，范围 0.1-60 秒</p>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">日志级别</label>
+                <select id="log-level"
+                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    <option value="DEBUG" {% if config.log_level == 'DEBUG' %}selected{% endif %}>DEBUG</option>
+                    <option value="INFO" {% if config.log_level == 'INFO' %}selected{% endif %}>INFO</option>
+                    <option value="WARNING" {% if config.log_level == 'WARNING' %}selected{% endif %}>WARNING</option>
+                    <option value="ERROR" {% if config.log_level == 'ERROR' %}selected{% endif %}>ERROR</option>
+                    <option value="CRITICAL" {% if config.log_level == 'CRITICAL' %}selected{% endif %}>CRITICAL</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 保存按钮 -->
+    <div class="flex justify-end space-x-4">
+        <button onclick="resetConfig()" class="px-6 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white">
+            重置
+        </button>
+        <button onclick="saveConfig()" class="px-8 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg flex items-center space-x-2">
+            <i class="fas fa-save"></i>
+            <span>保存配置</span>
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // AI 启用切换
+    document.getElementById('ai-enabled').addEventListener('change', function() {
+        const settings = document.getElementById('ai-settings');
+        if (this.checked) {
+            settings.classList.remove('opacity-50', 'pointer-events-none');
+        } else {
+            settings.classList.add('opacity-50', 'pointer-events-none');
+        }
+    });
+
+    // 测试连接
+    async function testConnection() {
+        const resultEl = document.getElementById('test-result');
+        resultEl.innerHTML = '<i class="fas fa-spinner fa-spin text-blue-600"></i> 测试中...';
+        
+        try {
+            const response = await fetch('/api/status');
+            if (response.ok) {
+                resultEl.innerHTML = '<i class="fas fa-check-circle text-green-600"></i> 连接正常';
+            } else {
+                resultEl.innerHTML = '<i class="fas fa-times-circle text-red-600"></i> 连接失败';
+            }
+        } catch (error) {
+            resultEl.innerHTML = '<i class="fas fa-times-circle text-red-600"></i> 连接失败: ' + error.message;
+        }
+    }
+
+    // 保存配置
+    async function saveConfig() {
+        const config = {
+            qbittorrent: {
+                host: document.getElementById('qb-host').value,
+                port: parseInt(document.getElementById('qb-port').value),
+                username: document.getElementById('qb-username').value,
+                use_https: document.getElementById('qb-https').checked
+            },
+            ai: {
+                enabled: document.getElementById('ai-enabled').checked,
+                model: document.getElementById('ai-model').value,
+                base_url: document.getElementById('ai-base-url').value,
+                timeout: parseInt(document.getElementById('ai-timeout').value),
+                max_retries: parseInt(document.getElementById('ai-max-retries').value)
+            },
+            check_interval: parseFloat(document.getElementById('check-interval').value),
+            log_level: document.getElementById('log-level').value
+        };
+        
+        // 如果有密码则添加
+        const password = document.getElementById('qb-password').value;
+        if (password) {
+            config.qbittorrent.password = password;
+        }
+        
+        const apiKey = document.getElementById('ai-api-key').value;
+        if (apiKey) {
+            config.ai.api_key = apiKey;
+        }
+        
+        // 验证
+        if (!config.qbittorrent.host || !config.qbittorrent.port || !config.qbittorrent.username) {
+            showToast('请填写完整的 qBittorrent 连接信息', 'error');
+            return;
+        }
+        
+        if (config.check_interval < 0.1 || config.check_interval > 60) {
+            showToast('检查间隔必须在 0.1-60 秒范围内', 'error');
+            return;
+        }
+        
+        try {
+            const result = await apiPost('/api/config', config);
+            
+            if (result.success) {
+                showToast('配置已保存', 'success');
+                // 清除密码字段
+                document.getElementById('qb-password').value = '';
+                document.getElementById('ai-api-key').value = '';
+            } else {
+                showToast(result.error || '保存失败', 'error');
+            }
+        } catch (error) {
+            showToast('请求失败: ' + error.message, 'error');
+        }
+    }
+
+    // 重置配置
+    function resetConfig() {
+        if (confirm('确定要重置所有更改吗？未保存的配置将丢失。')) {
+            location.reload();
+        }
+    }
+
+    // 页面加载
+    document.addEventListener('DOMContentLoaded', () => {
+        // 初始化 AI 设置状态
+        const aiEnabled = document.getElementById('ai-enabled');
+        const aiSettings = document.getElementById('ai-settings');
+        if (!aiEnabled.checked) {
+            aiSettings.classList.add('opacity-50', 'pointer-events-none');
+        }
+    });
+</script>
+{% endblock %}

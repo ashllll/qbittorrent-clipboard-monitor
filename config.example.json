@@ -3,12 +3,12 @@
     "host": "localhost",
     "port": 8080,
     "username": "admin",
-    "password": "adminadmin",
+    "password": "your_password_here",
     "use_https": false
   },
   "ai": {
-    "enabled": false,
-    "api_key": "",
+    "enabled": true,
+    "api_key": "your_api_key_here",
     "model": "deepseek-chat",
     "base_url": "https://api.deepseek.com/v1",
     "timeout": 30,
@@ -41,5 +41,73 @@
     }
   },
   "check_interval": 1.0,
-  "log_level": "INFO"
+  "log_level": "INFO",
+  "database": {
+    "enabled": true,
+    "db_path": "~/.local/share/qb-monitor/monitor.db",
+    "auto_cleanup_days": 0,
+    "export_format": "json"
+  },
+  "metrics": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 9090,
+    "path": "/metrics"
+  },
+  "plugins": {
+    "enabled": true,
+    "plugins_dir": null,
+    "auto_enable": false,
+    "auto_discover": true,
+    "enabled_plugins": [
+      "webhook_notifier",
+      "dingtalk_notifier"
+    ],
+    "disabled_plugins": [],
+    "plugin_configs": {
+      "webhook_notifier": {
+        "url": "https://hooks.example.com/notify",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer your_token_here"
+        },
+        "timeout": 30,
+        "template": {
+          "title": "{title}",
+          "message": "{message}",
+          "event": "{event_type}"
+        }
+      },
+      "dingtalk_notifier": {
+        "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=your_token",
+        "secret": "SECyour_secret",
+        "at_mobiles": [],
+        "at_all": false,
+        "timeout": 30
+      },
+      "local_ai_classifier": {
+        "base_url": "http://localhost:11434",
+        "model": "llama2",
+        "timeout": 60,
+        "categories": ["movies", "tv", "anime", "music", "software", "other"],
+        "temperature": 0.3,
+        "fallback_enabled": true
+      },
+      "rss_feed_handler": {
+        "feeds": [
+          {
+            "url": "https://example.com/rss/movies",
+            "category": "movies",
+            "filter": {
+              "keywords": ["1080p", "BluRay"],
+              "exclude": ["CAM", "TS"]
+            }
+          }
+        ],
+        "check_interval": 30,
+        "max_items_per_feed": 10,
+        "auto_download": true
+      }
+    }
+  }
 }

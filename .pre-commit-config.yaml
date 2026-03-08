@@ -1,0 +1,176 @@
+# pre-commit configuration for qbittorrent-clipboard-monitor
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+repos:
+  # ==========================================
+  # 基础文件检查
+  # ==========================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # 去除行尾空格
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: ^(CHANGELOG\.md|\.bumpversion\.cfg)$
+      # 确保文件以换行符结尾
+      - id: end-of-file-fixer
+        exclude: ^(\.bumpversion\.cfg)$
+      # 检查 YAML 语法
+      - id: check-yaml
+      # 检查 JSON 语法
+      - id: check-json
+      # 检查 TOML 语法
+      - id: check-toml
+      # 检查是否有大文件被提交
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      # 检查合并冲突标记
+      - id: check-merge-conflict
+      # 检查可执行文件是否有 shebang
+      - id: check-executables-have-shebangs
+      # 检查 shebang 是否正确
+      - id: check-shebang-scripts-are-executable
+      # 检查 UTF-8 编码
+      - id: fix-byte-order-marker
+      # 检查混合换行符
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      # 检查调试语句
+      - id: debug-statements
+      # 检查私有密钥
+      - id: detect-private-key
+
+  # ==========================================
+  # Python 代码格式化 - Black
+  # ==========================================
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        language_version: python3.9
+        args: ['--line-length=100', '--target-version=py39']
+        files: ^(qbittorrent_monitor|tests)/
+
+  # ==========================================
+  # Python 导入排序 - isort
+  # ==========================================
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ['--profile=black', '--line-length=100']
+        files: ^(qbittorrent_monitor|tests)/
+
+  # ==========================================
+  # Python 类型检查 - mypy
+  # ==========================================
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.9.0
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - types-requests
+          - types-PyYAML
+        args: ['--ignore-missing-imports', '--show-error-codes']
+        files: ^qbittorrent_monitor/
+
+  # ==========================================
+  # Python 代码风格 - flake8
+  # ==========================================
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        additional_dependencies:
+          - flake8-docstrings
+          - flake8-bugbear
+          - flake8-comprehensions
+          - flake8-simplify
+        args: ['--max-line-length=100', '--extend-ignore=E203,W503']
+        files: ^(qbittorrent_monitor|tests)/
+
+  # ==========================================
+  # Python 安全扫描 - bandit
+  # ==========================================
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.8
+    hooks:
+      - id: bandit
+        args: ['-c', 'pyproject.toml', '-ll']
+        additional_dependencies: ["bandit[toml]"]
+        files: ^qbittorrent_monitor/
+
+  # ==========================================
+  # Markdown 文档检查
+  # ==========================================
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.39.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix', '--ignore', 'CHANGELOG.md']
+        files: \.(md|markdown)$
+
+  # ==========================================
+  # Dockerfile 检查
+  # ==========================================
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint
+        args: ['--ignore', 'DL3013', '--ignore', 'DL3008']
+
+  # ==========================================
+  # 本地 Hooks
+  # ==========================================
+  - repo: local
+    hooks:
+      # pytest 快速检查 - 仅运行快速测试
+      - id: pytest-check
+        name: pytest-check
+        entry: pytest tests/ -v --tb=short -x -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # 自定义检查脚本
+      - id: custom-check
+        name: custom-check
+        entry: bash scripts/pre-commit-check.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # 检查 Python 文件是否有语法错误
+      - id: python-syntax-check
+        name: python-syntax-check
+        entry: python -m py_compile
+        language: system
+        files: \.py$
+        pass_filenames: true
+
+# ==========================================
+# 全局配置
+# ==========================================
+default_language_version:
+  python: python3.9
+
+default_stages: [pre-commit, pre-push]
+
+# 排除文件
+exclude: >
+  (?x)^(
+    \.git/|
+    \.venv/|
+    venv/|
+    __pycache__/|
+    \.pytest_cache/|
+    \.mypy_cache/|
+    build/|
+    dist/|
+    \.egg-info/|
+    docs/_build/|
+    \.tox/
+  )

@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+
+{% block title %}分类管理 - qBittorrent 剪贴板监控{% endblock %}
+
+{% block content %}
+<!-- 页面标题 -->
+<div class="mb-8 flex justify-between items-center">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">分类管理</h1>
+        <p class="text-gray-600 dark:text-gray-400">管理自动分类规则和保存路径</p>
+    </div>
+    <button onclick="openAddModal()" class="px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors flex items-center space-x-2">
+        <i class="fas fa-plus"></i>
+        <span>添加分类</span>
+    </button>
+</div>
+
+<!-- 分类列表 -->
+<div id="categories-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <!-- 动态生成 -->
+</div>
+
+<!-- 添加/编辑分类模态框 -->
+<div id="category-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full animate-fade-in">
+        <div class="px-6 py-4 border-b dark:border-gray-700 flex justify-between items-center">
+            <h3 id="modal-title" class="text-lg font-semibold text-gray-900 dark:text-white">添加分类</h3>
+            <button onclick="closeModal()" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <div class="p-6">
+            <form id="category-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        分类名称 <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="cat-name" required
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        placeholder="例如: movies">
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">只能包含字母、数字和下划线</p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        保存路径 <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="cat-path" required
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        placeholder="/downloads/movies">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        关键词 <span class="text-red-500">*</span>
+                    </label>
+                    <textarea id="cat-keywords" rows="4" required
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        placeholder="每行一个关键词&#10;例如:&#10;1080p&#10;BluRay&#10;电影"></textarea>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">每行一个关键词，用于自动匹配</p>
+                </div>
+            </form>
+        </div>
+        <div class="px-6 py-4 border-t dark:border-gray-700 flex justify-end space-x-3">
+            <button onclick="closeModal()" class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white">
+                取消
+            </button>
+            <button onclick="saveCategory()" class="px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
+                保存
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div id="delete-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full animate-fade-in">
+        <div class="p-6">
+            <div class="flex items-center space-x-4 mb-4">
+                <div class="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                    <i class="fas fa-exclamation-triangle text-red-600 dark:text-red-400 text-xl"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">确认删除</h3>
+            </div>
+            <p class="text-gray-600 dark:text-gray-400 mb-6">
+                确定要删除分类 <span id="delete-cat-name" class="font-semibold text-gray-900 dark:text-white"></span> 吗？此操作不可恢复。
+            </p>
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeDeleteModal()" class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white">
+                    取消
+                </button>
+                <button onclick="confirmDelete()" class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg">
+                    删除
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let categories = {};
+    let editingCategory = null;
+    let deletingCategory = null;
+
+    // 加载分类
+    async function loadCategories() {
+        try {
+            const data = await apiGet('/api/categories');
+            categories = data;
+            renderCategories();
+        } catch (error) {
+            console.error('加载分类失败:', error);
+            showToast('加载分类失败', 'error');
+        }
+    }
+
+    // 渲染分类卡片
+    function renderCategories() {
+        const container = document.getElementById('categories-container');
+        
+        if (Object.keys(categories).length === 0) {
+            container.innerHTML = `
+                <div class="col-span-full text-center py-12">
+                    <i class="fas fa-folder-open text-6xl text-gray-300 dark:text-gray-600 mb-4"></i>
+                    <p class="text-gray-500 dark:text-gray-400">暂无分类</p>
+                    <button onclick="openAddModal()" class="mt-4 px-4 py-2 text-primary-600 hover:text-primary-700">
+                        添加第一个分类
+                    </button>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = Object.entries(categories).map(([name, cat]) => `
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-shadow">
+                <div class="flex justify-between items-start mb-4">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-lg flex items-center justify-center">
+                            <i class="fas ${getCategoryIcon(name)} text-primary-600 dark:text-primary-400"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${name}</h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">${cat.keywords.length} 个关键词</p>
+                        </div>
+                    </div>
+                    <div class="flex space-x-1">
+                        <button onclick="openEditModal('${name}')" class="p-2 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button onclick="openDeleteModal('${name}')" class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">保存路径</p>
+                    <p class="font-mono text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 p-2 rounded truncate">
+                        ${cat.save_path}
+                    </p>
+                </div>
+                
+                <div>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">关键词</p>
+                    <div class="flex flex-wrap gap-2">
+                        ${cat.keywords.slice(0, 8).map(kw => `
+                            <span class="inline-flex items-center px-2 py-1 rounded-md text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                ${escapeHtml(kw)}
+                            </span>
+                        `).join('')}
+                        ${cat.keywords.length > 8 ? `
+                            <span class="inline-flex items-center px-2 py-1 rounded-md text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                +${cat.keywords.length - 8}
+                            </span>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // 获取分类图标
+    function getCategoryIcon(name) {
+        const icons = {
+            movies: 'fa-film',
+            tv: 'fa-tv',
+            anime: 'fa-dragon',
+            music: 'fa-music',
+            software: 'fa-laptop-code',
+            games: 'fa-gamepad',
+            books: 'fa-book',
+            other: 'fa-folder'
+        };
+        return icons[name.toLowerCase()] || 'fa-folder';
+    }
+
+    // 打开添加模态框
+    function openAddModal() {
+        editingCategory = null;
+        document.getElementById('modal-title').textContent = '添加分类';
+        document.getElementById('category-form').reset();
+        document.getElementById('cat-name').disabled = false;
+        document.getElementById('category-modal').classList.remove('hidden');
+    }
+
+    // 打开编辑模态框
+    function openEditModal(name) {
+        editingCategory = name;
+        const cat = categories[name];
+        
+        document.getElementById('modal-title').textContent = '编辑分类';
+        document.getElementById('cat-name').value = name;
+        document.getElementById('cat-name').disabled = true;
+        document.getElementById('cat-path').value = cat.save_path;
+        document.getElementById('cat-keywords').value = cat.keywords.join('\n');
+        
+        document.getElementById('category-modal').classList.remove('hidden');
+    }
+
+    // 关闭模态框
+    function closeModal() {
+        document.getElementById('category-modal').classList.add('hidden');
+        editingCategory = null;
+    }
+
+    // 保存分类
+    async function saveCategory() {
+        const name = document.getElementById('cat-name').value.trim();
+        const savePath = document.getElementById('cat-path').value.trim();
+        const keywordsText = document.getElementById('cat-keywords').value.trim();
+        
+        if (!name || !savePath || !keywordsText) {
+            showToast('请填写所有必填项', 'error');
+            return;
+        }
+        
+        // 验证分类名称
+        if (!/^[a-zA-Z0-9_]+$/.test(name)) {
+            showToast('分类名称只能包含字母、数字和下划线', 'error');
+            return;
+        }
+        
+        // 解析关键词
+        const keywords = keywordsText.split('\n').map(k => k.trim()).filter(k => k);
+        
+        if (keywords.length === 0) {
+            showToast('至少需要输入一个关键词', 'error');
+            return;
+        }
+        
+        try {
+            const result = await apiPost(`/api/categories/${name}`, {
+                save_path: savePath,
+                keywords: keywords
+            });
+            
+            if (result.success) {
+                showToast(editingCategory ? '分类已更新' : '分类已添加', 'success');
+                closeModal();
+                loadCategories();
+            } else {
+                showToast(result.error || '保存失败', 'error');
+            }
+        } catch (error) {
+            showToast('请求失败: ' + error.message, 'error');
+        }
+    }
+
+    // 打开删除确认模态框
+    function openDeleteModal(name) {
+        deletingCategory = name;
+        document.getElementById('delete-cat-name').textContent = name;
+        document.getElementById('delete-modal').classList.remove('hidden');
+    }
+
+    // 关闭删除模态框
+    function closeDeleteModal() {
+        document.getElementById('delete-modal').classList.add('hidden');
+        deletingCategory = null;
+    }
+
+    // 确认删除
+    async function confirmDelete() {
+        if (!deletingCategory) return;
+        
+        try {
+            const result = await apiDelete(`/api/categories/${deletingCategory}`);
+            
+            if (result.success) {
+                showToast('分类已删除', 'success');
+                closeDeleteModal();
+                loadCategories();
+            } else {
+                showToast(result.error || '删除失败', 'error');
+            }
+        } catch (error) {
+            showToast('请求失败: ' + error.message, 'error');
+        }
+    }
+
+    // HTML 转义
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // 点击模态框背景关闭
+    document.getElementById('category-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) {
+            closeModal();
+        }
+    });
+
+    document.getElementById('delete-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) {
+            closeDeleteModal();
+        }
+    });
+
+    // 页面加载
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCategories();
+    });
+</script>
+{% endblock %}

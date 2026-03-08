@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+
+{% block title %}仪表盘 - qBittorrent 剪贴板监控{% endblock %}
+
+{% block content %}
+<!-- 页面标题 -->
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">仪表盘</h1>
+    <p class="text-gray-600 dark:text-gray-400">实时监控剪贴板和种子添加状态</p>
+</div>
+
+<!-- 控制按钮 -->
+<div class="mb-6 flex space-x-4">
+    <button id="start-btn" onclick="toggleMonitor(true)" class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center space-x-2 {% if is_running %}opacity-50 cursor-not-allowed{% endif %}" {% if is_running %}disabled{% endif %}>
+        <i class="fas fa-play"></i>
+        <span>启动监控</span>
+    </button>
+    <button id="stop-btn" onclick="toggleMonitor(false)" class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center space-x-2 {% if not is_running %}opacity-50 cursor-not-allowed{% endif %}" {% if not is_running %}disabled{% endif %}>
+        <i class="fas fa-stop"></i>
+        <span>停止监控</span>
+    </button>
+</div>
+
+<!-- 统计卡片 -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">已处理</p>
+                <p id="stat-total" class="text-3xl font-bold text-gray-900 dark:text-white mt-1">{{ stats.get('total_processed', 0) }}</p>
+            </div>
+            <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                <i class="fas fa-tasks text-blue-600 dark:text-blue-400 text-xl"></i>
+            </div>
+        </div>
+    </div>
+    
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">成功</p>
+                <p id="stat-success" class="text-3xl font-bold text-green-600 dark:text-green-400 mt-1">{{ stats.get('successful_adds', 0) }}</p>
+            </div>
+            <div class="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                <i class="fas fa-check-circle text-green-600 dark:text-green-400 text-xl"></i>
+            </div>
+        </div>
+    </div>
+    
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">失败</p>
+                <p id="stat-failed" class="text-3xl font-bold text-red-600 dark:text-red-400 mt-1">{{ stats.get('failed_adds', 0) }}</p>
+            </div>
+            <div class="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                <i class="fas fa-times-circle text-red-600 dark:text-red-400 text-xl"></i>
+            </div>
+        </div>
+    </div>
+    
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">重复跳过</p>
+                <p id="stat-duplicates" class="text-3xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">{{ stats.get('duplicates_skipped', 0) }}</p>
+            </div>
+            <div class="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
+                <i class="fas fa-filter text-yellow-600 dark:text-yellow-400 text-xl"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 详细信息 -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <!-- 性能统计 -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            <i class="fas fa-tachometer-alt mr-2 text-primary-500"></i>性能统计
+        </h3>
+        <div class="space-y-4">
+            <div class="flex justify-between items-center">
+                <span class="text-gray-600 dark:text-gray-400">运行时间</span>
+                <span id="stat-uptime" class="font-mono text-gray-900 dark:text-white">{{ "%.0f"|format(stats.get('uptime_seconds', 0)) }}s</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-600 dark:text-gray-400">检查次数</span>
+                <span id="stat-checks" class="font-mono text-gray-900 dark:text-white">{{ stats.get('checks_performed', 0) }}</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-600 dark:text-gray-400">剪贴板变化</span>
+                <span id="stat-changes" class="font-mono text-gray-900 dark:text-white">{{ stats.get('clipboard_changes', 0) }}</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-600 dark:text-gray-400">平均耗时</span>
+                <span id="stat-avg-time" class="font-mono text-gray-900 dark:text-white">{{ "%.2f"|format(stats.get('avg_check_time_ms', 0)) }}ms</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span class="text-gray-600 dark:text-gray-400">检查频率</span>
+                <span id="stat-rate" class="font-mono text-gray-900 dark:text-white">{{ "%.1f"|format(stats.get('checks_per_minute', 0)) }}/min</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 手动添加 -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            <i class="fas fa-plus-circle mr-2 text-primary-500"></i>手动添加磁力链接
+        </h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">磁力链接</label>
+                <textarea id="magnet-input" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="magnet:?xt=urn:btih:..."></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">分类（可选）</label>
+                <select id="category-select" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                    <option value="">自动分类</option>
+                    <option value="movies">电影</option>
+                    <option value="tv">电视剧</option>
+                    <option value="anime">动画</option>
+                    <option value="music">音乐</option>
+                    <option value="software">软件</option>
+                    <option value="games">游戏</option>
+                    <option value="books">书籍</option>
+                    <option value="other">其他</option>
+                </select>
+            </div>
+            <button onclick="addTorrent()" class="w-full py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors flex items-center justify-center space-x-2">
+                <i class="fas fa-plus"></i>
+                <span>添加种子</span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- 最近活动 -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            <i class="fas fa-bolt mr-2 text-primary-500"></i>最近活动
+        </h3>
+        <div id="recent-activity" class="space-y-2 max-h-64 overflow-y-auto">
+            <p class="text-gray-500 dark:text-gray-400 text-center py-4">暂无活动</p>
+        </div>
+        <a href="/history" class="mt-4 block text-center text-primary-600 dark:text-primary-400 hover:underline text-sm">
+            查看全部历史 <i class="fas fa-arrow-right ml-1"></i>
+        </a>
+    </div>
+</div>
+
+<!-- 实时日志 -->
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-100 dark:border-gray-700 overflow-hidden">
+    <div class="px-6 py-4 border-b dark:border-gray-700 flex justify-between items-center">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+            <i class="fas fa-terminal mr-2 text-primary-500"></i>实时日志
+        </h3>
+        <button onclick="clearLogs()" class="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+            <i class="fas fa-trash-alt mr-1"></i>清除
+        </button>
+    </div>
+    <div id="log-container" class="h-64 overflow-y-auto p-4 bg-gray-900 font-mono text-sm">
+        <!-- 日志内容将在这里显示 -->
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // 加载最近历史
+    async function loadRecentHistory() {
+        try {
+            const data = await apiGet('/api/history?limit=5');
+            const container = document.getElementById('recent-activity');
+            
+            if (data.items && data.items.length > 0) {
+                container.innerHTML = data.items.map(item => `
+                    <div class="flex items-center space-x-3 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg animate-fade-in">
+                        <span class="w-2 h-2 rounded-full ${item.status === 'success' ? 'bg-green-500' : item.status === 'failed' ? 'bg-red-500' : 'bg-yellow-500'}"></span>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm text-gray-900 dark:text-white truncate">${item.display_name}</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">${item.category} · ${new Date(item.timestamp).toLocaleTimeString()}</p>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        } catch (error) {
+            console.error('加载历史失败:', error);
+        }
+    }
+    
+    // 添加种子
+    async function addTorrent() {
+        const magnet = document.getElementById('magnet-input').value.trim();
+        const category = document.getElementById('category-select').value;
+        
+        if (!magnet) {
+            showToast('请输入磁力链接', 'error');
+            return;
+        }
+        
+        if (!magnet.startsWith('magnet:?')) {
+            showToast('无效的磁力链接格式', 'error');
+            return;
+        }
+        
+        try {
+            const result = await apiPost('/api/torrents', { magnet, category: category || null });
+            
+            if (result.success) {
+                showToast('种子添加成功', 'success');
+                document.getElementById('magnet-input').value = '';
+                loadRecentHistory();
+            } else {
+                showToast(result.error || '添加失败', 'error');
+            }
+        } catch (error) {
+            showToast('请求失败: ' + error.message, 'error');
+        }
+    }
+    
+    // 切换监控
+    async function toggleMonitor(start) {
+        try {
+            const url = start ? '/api/control/start' : '/api/control/stop';
+            const result = await apiPost(url, {});
+            
+            if (result.success) {
+                showToast(result.message, 'success');
+                updateButtons(start);
+            } else {
+                showToast(result.error || '操作失败', 'error');
+            }
+        } catch (error) {
+            showToast('请求失败: ' + error.message, 'error');
+        }
+    }
+    
+    // 更新按钮状态
+    function updateButtons(isRunning) {
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        
+        if (isRunning) {
+            startBtn.disabled = true;
+            startBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            stopBtn.disabled = false;
+            stopBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+            startBtn.disabled = false;
+            startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            stopBtn.disabled = true;
+            stopBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+    }
+    
+    // 更新统计
+    function updateStats(stats) {
+        document.getElementById('stat-total').textContent = stats.total_processed || 0;
+        document.getElementById('stat-success').textContent = stats.successful_adds || 0;
+        document.getElementById('stat-failed').textContent = stats.failed_adds || 0;
+        document.getElementById('stat-duplicates').textContent = stats.duplicates_skipped || 0;
+        document.getElementById('stat-uptime').textContent = formatDuration(stats.uptime_seconds || 0);
+        document.getElementById('stat-checks').textContent = stats.checks_performed || 0;
+        document.getElementById('stat-changes').textContent = stats.clipboard_changes || 0;
+        document.getElementById('stat-avg-time').textContent = (stats.avg_check_time_ms || 0).toFixed(2) + 'ms';
+        document.getElementById('stat-rate').textContent = (stats.checks_per_minute || 0).toFixed(1) + '/min';
+    }
+    
+    // 格式化持续时间
+    function formatDuration(seconds) {
+        if (seconds < 60) return Math.floor(seconds) + 's';
+        if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+        if (seconds < 86400) return Math.floor(seconds / 3600) + 'h';
+        return Math.floor(seconds / 86400) + 'd';
+    }
+    
+    // 添加日志到界面
+    function addLogToUI(entry) {
+        const container = document.getElementById('log-container');
+        const logLine = document.createElement('div');
+        logLine.className = `log-${entry.level.toLowerCase()} mb-1`;
+        logLine.innerHTML = `<span class="text-gray-500">[${entry.timestamp}]</span> <span class="font-bold">${entry.level}:</span> ${escapeHtml(entry.message)}`;
+        
+        container.appendChild(logLine);
+        
+        // 保持最多 100 行日志
+        while (container.children.length > 100) {
+            container.removeChild(container.firstChild);
+        }
+        
+        // 自动滚动到底部
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    // 清除日志
+    function clearLogs() {
+        document.getElementById('log-container').innerHTML = '';
+    }
+    
+    // HTML 转义
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // WebSocket 消息处理
+    window.addEventListener('ws-message', (event) => {
+        const data = event.detail;
+        
+        if (data.type === 'stats') {
+            updateStats(data.data);
+        } else if (data.type === 'log') {
+            addLogToUI(data.data);
+        } else if (data.type === 'history_update') {
+            loadRecentHistory();
+        } else if (data.type === 'status') {
+            updateButtons(data.data.is_running);
+            updateStats(data.data.stats);
+        }
+    });
+    
+    // 页面加载
+    document.addEventListener('DOMContentLoaded', () => {
+        loadRecentHistory();
+        
+        // 请求初始日志
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ action: 'get_logs' }));
+        }
+    });
+</script>
+{% endblock %}

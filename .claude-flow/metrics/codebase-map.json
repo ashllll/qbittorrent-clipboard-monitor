@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-03-07T17:03:20.712Z",
+  "projectRoot": "/Volumes/U/code/github/qbittorrent-clipboard-monitor",
+  "structure": {
+    "hasPackageJson": false,
+    "hasTsConfig": false,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1772903000712
+}

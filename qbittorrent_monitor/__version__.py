@@ -1,7 +1,11 @@
 """版本信息模块"""
 
+from __future__ import annotations
+
+from typing import Tuple
+
 __version__ = "3.0.0"
-__version_info__ = (3, 0, 0)
+__version_info__: Tuple[int, int, int] = (3, 0, 0)
 
 PROJECT_NAME = "qbittorrent-clipboard-monitor"
 PROJECT_DESCRIPTION = "qBittorrent剪贴板监控与自动分类下载工具"
@@ -13,6 +17,6 @@ def get_version_string() -> str:
     return __version__
 
 
-def get_version_info() -> tuple:
+def get_version_info() -> Tuple[int, int, int]:
     """获取版本信息元组"""
     return __version_info__

@@ -1,0 +1,66 @@
+[flake8]
+# 与 Black 兼容的设置
+# E203: Whitespace before ':' (与 black 冲突)
+# W503: Line break before binary operator (与 black 冲突)
+extend-ignore = E203, W503
+
+# 最大行长度 (与 black 一致)
+max-line-length = 100
+
+# 最大圈复杂度
+max-complexity = 10
+
+# 排除的目录
+exclude = 
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    .env,
+    env,
+    build,
+    dist,
+    .mypy_cache,
+    .pytest_cache,
+    .eggs,
+    *.egg,
+    *.egg-info,
+    htmlcov,
+    .tox,
+    .nox,
+    .coverage,
+    .coverage.*,
+    coverage.*,
+    site,
+    docs/_build,
+    docs/_static
+
+# 启用 docstrings 检查
+# 需要安装: pip install flake8-docstrings
+select = E,W,F,D
+
+# 文档字符串风格 (google, numpy, pep257)
+docstring-convention = google
+
+# 额外的忽略 (根据项目需求调整)
+# D100: Missing docstring in public module
+# D104: Missing docstring in public package
+# D107: Missing docstring in __init__
+ignore = D100,D104,D107
+
+# 显示统计信息
+show-source = true
+show-pep8 = true
+statistics = true
+
+# 显示错误代码
+count = true
+
+# 每行最大导入数量
+max-line-complexity = 15
+
+# 导入排序检查 (需要安装 flake8-import-order)
+# import-order-style = google
+
+# 引号检查 (需要安装 flake8-quotes)
+# quotes = double

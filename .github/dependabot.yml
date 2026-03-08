@@ -1,0 +1,79 @@
+# =============================================================================
+# Dependabot Configuration
+# =============================================================================
+# 自动检查并创建依赖更新 PR
+# =============================================================================
+
+version: 2
+
+updates:
+  # ===========================================================================
+  # Python 依赖 (Poetry)
+  # ===========================================================================
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    reviewers:
+      - ${{ github.repository_owner }}
+    assignees:
+      - ${{ github.repository_owner }}
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps(dev)"
+      include: scope
+    labels:
+      - dependencies
+      - python
+    # 忽略某些依赖的自动更新（可选）
+    # ignore:
+    #   - dependency-name: "some-package"
+    #     versions: ["version-update:semver-major"]
+
+  # ===========================================================================
+  # GitHub Actions
+  # ===========================================================================
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    reviewers:
+      - ${{ github.repository_owner }}
+    assignees:
+      - ${{ github.repository_owner }}
+    commit-message:
+      prefix: "ci"
+      include: scope
+    labels:
+      - dependencies
+      - github-actions
+
+  # ===========================================================================
+  # Docker 基础镜像
+  # ===========================================================================
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    reviewers:
+      - ${{ github.repository_owner }}
+    assignees:
+      - ${{ github.repository_owner }}
+    commit-message:
+      prefix: "docker"
+      include: scope
+    labels:
+      - dependencies
+      - docker

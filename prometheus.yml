@@ -1,0 +1,76 @@
+# Prometheus 配置文件
+# 
+# 使用方法:
+# 1. 将此文件挂载到 Prometheus 容器: /etc/prometheus/prometheus.yml
+# 2. 确保 qbittorrent-monitor 服务的 9090 端口可访问
+# 3. 重启 Prometheus 服务
+
+global:
+  # 默认抓取间隔
+  scrape_interval: 15s
+  # 默认评估间隔
+  evaluation_interval: 15s
+  # 外部标签（可选）
+  external_labels:
+    monitor: 'qbittorrent-monitor'
+
+# 告警规则文件（可选）
+rule_files:
+  # - "alert_rules.yml"
+
+# 抓取配置
+scrape_configs:
+  # Prometheus 自身监控
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # qBittorrent Clipboard Monitor
+  - job_name: 'qbittorrent-monitor'
+    # 抓取间隔（覆盖全局配置）
+    scrape_interval: 10s
+    # 超时时间
+    scrape_timeout: 5s
+    # 指标路径
+    metrics_path: /metrics
+    # 静态配置
+    static_configs:
+      # 本地运行配置
+      - targets: ['host.docker.internal:9090']
+        labels:
+          instance: 'local'
+          env: 'development'
+      
+      # Docker 网络配置（如果使用 docker-compose）
+      - targets: ['qb-monitor:9090']
+        labels:
+          instance: 'docker'
+          env: 'production'
+    
+    # 使用文件服务发现（可选，适合动态环境）
+    # file_sd_configs:
+    #   - files:
+    #       - 'targets/qb-monitor.json'
+    #     refresh_interval: 5m
+
+  # 如果需要监控多个实例
+  # - job_name: 'qbittorrent-monitor-cluster'
+  #   scrape_interval: 10s
+  #   static_configs:
+  #     - targets: ['qb-monitor-1:9090', 'qb-monitor-2:9090']
+  #       labels:
+  #         service: 'qbittorrent-monitor'
+
+# 告警管理器配置（可选）
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# 远程存储配置（可选）
+# remote_write:
+#   - url: "http://remote-storage:9201/write"
+
+# remote_read:
+#   - url: "http://remote-storage:9201/read"

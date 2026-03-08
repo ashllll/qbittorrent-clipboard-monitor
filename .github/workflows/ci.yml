@@ -1,0 +1,329 @@
+# =============================================================================
+# Continuous Integration Workflow
+# =============================================================================
+# 触发条件:
+#   - push 到 main/develop 分支
+#   - pull request 到 main/develop 分支
+#   - 每周一定期运行
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  schedule:
+    # 每周一凌晨 2 点运行
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+env:
+  PYTHONUNBUFFERED: 1
+  FORCE_COLOR: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ===========================================================================
+  # 代码质量检查
+  # ===========================================================================
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached dependencies
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-lint-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root --with dev
+
+      - name: Install linting tools
+        run: |
+          pip install black isort mypy bandit safety
+
+      - name: Check code formatting with Black
+        run: |
+          black --check --diff qbittorrent_monitor tests
+
+      - name: Check import sorting with isort
+        run: |
+          isort --check-only --diff qbittorrent_monitor tests
+
+      - name: Type check with mypy
+        run: |
+          mypy qbittorrent_monitor
+
+      - name: Security scan with bandit
+        run: |
+          bandit -r qbittorrent_monitor -f json -o bandit-report.json || true
+          bandit -r qbittorrent_monitor
+
+      - name: Upload bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+          retention-days: 30
+
+  # ===========================================================================
+  # 安全扫描
+  # ===========================================================================
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+
+      - name: Run safety check
+        run: |
+          pip install safety
+          safety check --full-report || true
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ===========================================================================
+  # 测试矩阵
+  # ===========================================================================
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+        exclude:
+          # 减少矩阵大小，Windows 和 macOS 只测试部分版本
+          - os: windows-latest
+            python-version: '3.9'
+          - os: windows-latest
+            python-version: '3.10'
+          - os: macos-latest
+            python-version: '3.9'
+          - os: macos-latest
+            python-version: '3.10'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached dependencies
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root --with dev
+
+      - name: Install package
+        run: poetry install --no-interaction
+
+      - name: Run tests
+        run: |
+          poetry run pytest tests/ -v --tb=short \
+            --cov=qbittorrent_monitor \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            -n auto 2>/dev/null || \
+          poetry run pytest tests/ -v --tb=short \
+            --cov=qbittorrent_monitor \
+            --cov-report=xml \
+            --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            .pytest_cache/
+          retention-days: 7
+
+  # ===========================================================================
+  # Docker 构建测试
+  # ===========================================================================
+  docker:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: qb-monitor:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Test Docker image
+        run: |
+          docker run --rm qb-monitor:test --help || true
+          docker run --rm qb-monitor:test python -c "from qbittorrent_monitor import __version__; print(__version__)"
+
+      - name: Run Trivy container scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'qb-monitor:test'
+          format: 'sarif'
+          output: 'trivy-container-results.sarif'
+
+      - name: Upload container scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-container-results.sarif'
+
+  # ===========================================================================
+  # 构建验证
+  # ===========================================================================
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+
+      - name: Build package
+        run: |
+          poetry build
+
+      - name: Check package
+        run: |
+          pip install twine
+          twine check dist/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  # ===========================================================================
+  # 总结
+  # ===========================================================================
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [lint, security, test, docker, build]
+    if: always()
+    steps:
+      - name: Check all jobs status
+        run: |
+          echo "Lint: ${{ needs.lint.result }}"
+          echo "Security: ${{ needs.security.result }}"
+          echo "Test: ${{ needs.test.result }}"
+          echo "Docker: ${{ needs.docker.result }}"
+          echo "Build: ${{ needs.build.result }}"
+          
+          if [[ "${{ needs.lint.result }}" == "failure" ]] || \
+             [[ "${{ needs.security.result }}" == "failure" ]] || \
+             [[ "${{ needs.test.result }}" == "failure" ]] || \
+             [[ "${{ needs.docker.result }}" == "failure" ]] || \
+             [[ "${{ needs.build.result }}" == "failure" ]]; then
+            echo "❌ CI failed"
+            exit 1
+          else
+            echo "✅ CI passed"
+          fi

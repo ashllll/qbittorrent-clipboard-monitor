@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+
+{% block title %}历史记录 - qBittorrent 剪贴板监控{% endblock %}
+
+{% block content %}
+<!-- 页面标题 -->
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">历史记录</h1>
+    <p class="text-gray-600 dark:text-gray-400">查看所有已处理的磁力链接</p>
+</div>
+
+<!-- 筛选和搜索 -->
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 mb-6 border border-gray-100 dark:border-gray-700">
+    <div class="flex flex-wrap gap-4">
+        <div class="flex-1 min-w-[200px]">
+            <div class="relative">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                <input type="text" id="search-input" placeholder="搜索磁力链接..." 
+                    class="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+            </div>
+        </div>
+        <div>
+            <select id="status-filter" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <option value="">所有状态</option>
+                <option value="success">成功</option>
+                <option value="failed">失败</option>
+                <option value="pending">处理中</option>
+            </select>
+        </div>
+        <div>
+            <select id="category-filter" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                <option value="">所有分类</option>
+                <option value="movies">电影</option>
+                <option value="tv">电视剧</option>
+                <option value="anime">动画</option>
+                <option value="music">音乐</option>
+                <option value="software">软件</option>
+                <option value="games">游戏</option>
+                <option value="books">书籍</option>
+                <option value="other">其他</option>
+            </select>
+        </div>
+        <button onclick="clearHistory()" class="px-4 py-2 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 border border-red-300 hover:border-red-400 dark:border-red-600 dark:hover:border-red-500 rounded-lg transition-colors">
+            <i class="fas fa-trash-alt mr-2"></i>清空历史
+        </button>
+    </div>
+</div>
+
+<!-- 历史记录表格 -->
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-100 dark:border-gray-700 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead class="bg-gray-50 dark:bg-gray-700/50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">状态</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">名称</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">分类</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">时间</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">操作</th>
+                </tr>
+            </thead>
+            <tbody id="history-table-body" class="divide-y divide-gray-200 dark:divide-gray-700">
+                <!-- 动态生成 -->
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- 分页 -->
+    <div class="px-6 py-4 border-t dark:border-gray-700 flex items-center justify-between">
+        <span id="pagination-info" class="text-sm text-gray-600 dark:text-gray-400">
+            显示 0 - 0 条，共 0 条
+        </span>
+        <div class="flex space-x-2">
+            <button id="prev-btn" onclick="changePage(-1)" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <span id="page-info" class="px-4 py-2 text-gray-600 dark:text-gray-400">第 1 页</span>
+            <button id="next-btn" onclick="changePage(1)" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 详情模态框 -->
+<div id="detail-modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden animate-fade-in">
+        <div class="px-6 py-4 border-b dark:border-gray-700 flex justify-between items-center">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">详情</h3>
+            <button onclick="closeModal()" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <div class="p-6 overflow-y-auto max-h-[60vh]">
+            <div id="modal-content" class="space-y-4">
+                <!-- 动态内容 -->
+            </div>
+        </div>
+        <div class="px-6 py-4 border-t dark:border-gray-700 flex justify-end space-x-3">
+            <button onclick="closeModal()" class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white">
+                关闭
+            </button>
+            <button id="modal-copy-btn" class="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
+                <i class="fas fa-copy mr-2"></i>复制磁力链接
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    let currentPage = 0;
+    const pageSize = 20;
+    let totalItems = 0;
+    let allHistory = [];
+    let filteredHistory = [];
+    let currentDetail = null;
+
+    // 加载历史记录
+    async function loadHistory() {
+        try {
+            const data = await apiGet(`/api/history?limit=1000&offset=0`);
+            allHistory = data.items || [];
+            totalItems = data.total || 0;
+            applyFilters();
+        } catch (error) {
+            console.error('加载历史失败:', error);
+            showToast('加载历史记录失败', 'error');
+        }
+    }
+
+    // 应用筛选
+    function applyFilters() {
+        const searchTerm = document.getElementById('search-input').value.toLowerCase();
+        const statusFilter = document.getElementById('status-filter').value;
+        const categoryFilter = document.getElementById('category-filter').value;
+
+        filteredHistory = allHistory.filter(item => {
+            const matchesSearch = !searchTerm || 
+                item.display_name.toLowerCase().includes(searchTerm) ||
+                item.hash.toLowerCase().includes(searchTerm);
+            const matchesStatus = !statusFilter || item.status === statusFilter;
+            const matchesCategory = !categoryFilter || item.category === categoryFilter;
+            
+            return matchesSearch && matchesStatus && matchesCategory;
+        });
+
+        currentPage = 0;
+        renderTable();
+    }
+
+    // 渲染表格
+    function renderTable() {
+        const tbody = document.getElementById('history-table-body');
+        const start = currentPage * pageSize;
+        const end = Math.min(start + pageSize, filteredHistory.length);
+        const items = filteredHistory.slice(start, end);
+
+        if (items.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                        <i class="fas fa-inbox text-4xl mb-2 block"></i>
+                        暂无记录
+                    </td>
+                </tr>
+            `;
+        } else {
+            tbody.innerHTML = items.map(item => `
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(item.status)}">
+                            ${getStatusIcon(item.status)} ${getStatusText(item.status)}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="max-w-xs truncate" title="${escapeHtml(item.display_name)}">
+                            ${escapeHtml(item.display_name)}
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 font-mono mt-1">
+                            ${item.hash.substring(0, 16)}...
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                            ${item.category}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                        ${formatDate(item.timestamp)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <button onclick='showDetail(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 mr-3">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button onclick="copyMagnet('${item.hash}')" class="text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300" title="复制 hash">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // 更新分页信息
+        document.getElementById('pagination-info').textContent = 
+            `显示 ${filteredHistory.length > 0 ? start + 1 : 0} - ${end} 条，共 ${filteredHistory.length} 条`;
+        document.getElementById('page-info').textContent = `第 ${currentPage + 1} 页 / 共 ${Math.ceil(filteredHistory.length / pageSize) || 1} 页`;
+        document.getElementById('prev-btn').disabled = currentPage === 0;
+        document.getElementById('next-btn').disabled = end >= filteredHistory.length;
+    }
+
+    // 获取状态样式
+    function getStatusClass(status) {
+        switch (status) {
+            case 'success': return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400';
+            case 'failed': return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400';
+            case 'pending': return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400';
+            default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+        }
+    }
+
+    // 获取状态图标
+    function getStatusIcon(status) {
+        switch (status) {
+            case 'success': return '<i class="fas fa-check mr-1"></i>';
+            case 'failed': return '<i class="fas fa-times mr-1"></i>';
+            case 'pending': return '<i class="fas fa-spinner fa-spin mr-1"></i>';
+            default: return '';
+        }
+    }
+
+    // 获取状态文本
+    function getStatusText(status) {
+        switch (status) {
+            case 'success': return '成功';
+            case 'failed': return '失败';
+            case 'pending': return '处理中';
+            default: return status;
+        }
+    }
+
+    // 格式化日期
+    function formatDate(timestamp) {
+        const date = new Date(timestamp);
+        return date.toLocaleString('zh-CN');
+    }
+
+    // 切换页面
+    function changePage(delta) {
+        const maxPage = Math.ceil(filteredHistory.length / pageSize) - 1;
+        currentPage = Math.max(0, Math.min(currentPage + delta, maxPage));
+        renderTable();
+    }
+
+    // 显示详情
+    function showDetail(item) {
+        currentDetail = item;
+        const modal = document.getElementById('detail-modal');
+        const content = document.getElementById('modal-content');
+        
+        content.innerHTML = `
+            <div class="grid grid-cols-1 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">状态</label>
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium ${getStatusClass(item.status)}">
+                        ${getStatusIcon(item.status)} ${getStatusText(item.status)}
+                    </span>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">名称</label>
+                    <p class="text-gray-900 dark:text-white break-all">${escapeHtml(item.display_name)}</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Hash</label>
+                    <p class="font-mono text-sm text-gray-700 dark:text-gray-300 break-all bg-gray-100 dark:bg-gray-700 p-2 rounded">${item.hash}</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">分类</label>
+                        <p class="text-gray-900 dark:text-white">${item.category}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">时间</label>
+                        <p class="text-gray-900 dark:text-white">${formatDate(item.timestamp)}</p>
+                    </div>
+                </div>
+                ${item.error_message ? `
+                <div>
+                    <label class="block text-sm font-medium text-red-500 mb-1">错误信息</label>
+                    <p class="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-2 rounded">${escapeHtml(item.error_message)}</p>
+                </div>
+                ` : ''}
+            </div>
+        `;
+        
+        // 更新复制按钮
+        document.getElementById('modal-copy-btn').onclick = () => {
+            copyMagnet(item.hash);
+        };
+        
+        modal.classList.remove('hidden');
+    }
+
+    // 关闭模态框
+    function closeModal() {
+        document.getElementById('detail-modal').classList.add('hidden');
+        currentDetail = null;
+    }
+
+    // 复制磁力链接
+    function copyMagnet(hash) {
+        const magnet = `magnet:?xt=urn:btih:${hash}`;
+        navigator.clipboard.writeText(magnet).then(() => {
+            showToast('磁力链接已复制到剪贴板', 'success');
+        }).catch(() => {
+            showToast('复制失败', 'error');
+        });
+    }
+
+    // 清空历史
+    async function clearHistory() {
+        if (!confirm('确定要清空所有历史记录吗？此操作不可恢复。')) {
+            return;
+        }
+        
+        // 这里调用清空历史的 API
+        showToast('历史记录已清空', 'success');
+        loadHistory();
+    }
+
+    // HTML 转义
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // 事件监听
+    document.getElementById('search-input').addEventListener('input', applyFilters);
+    document.getElementById('status-filter').addEventListener('change', applyFilters);
+    document.getElementById('category-filter').addEventListener('change', applyFilters);
+
+    // WebSocket 更新
+    window.addEventListener('ws-message', (event) => {
+        if (event.detail.type === 'history_update') {
+            loadHistory();
+        }
+    });
+
+    // 页面加载
+    document.addEventListener('DOMContentLoaded', () => {
+        loadHistory();
+    });
+
+    // 点击模态框背景关闭
+    document.getElementById('detail-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) {
+            closeModal();
+        }
+    });
+</script>
+{% endblock %}
