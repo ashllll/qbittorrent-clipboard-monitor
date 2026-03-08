@@ -9,7 +9,7 @@ packages = [{include = "qbittorrent_monitor"}]
 [tool.poetry.dependencies]
 python = "^3.9"
 aiohttp = "^3.11"
-anthropic = "^0.43"
+anthropic = "^0.84"
 pyperclip = "^1.9"
 fastapi = "^0.115"
 uvicorn = "^0.32"
