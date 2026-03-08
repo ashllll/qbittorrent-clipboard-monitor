@@ -38,7 +38,7 @@ version = "^2.1.0"
 optional = true
 
 [tool.poetry.dependencies.psutil]
-version = "^5.9.0"
+version = "^7.2.2"
 optional = true
 
 [tool.poetry.scripts]
