@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..exceptions import ConfigError
+from ..exceptions_unified import ConfigurationError
 from ..security import validate_url
 from .constants import (
     MIN_TIMEOUT, MAX_TIMEOUT, MIN_RETRIES, MAX_RETRIES,
@@ -50,26 +50,26 @@ class AIConfig:
         """验证 AI 配置
         
         Raises:
-            ConfigError: 当配置项无效时抛出
+            ConfigurationError: 当配置项无效时抛出
         """
         if not isinstance(self.enabled, bool):
-            raise ConfigError(f"AI_ENABLED 必须是布尔值 (true/false)，当前值: {self.enabled}")
+            raise ConfigurationError(f"AI_ENABLED 必须是布尔值 (true/false)，当前值: {self.enabled}")
         
         if self.enabled:
             validate_api_key(self.api_key, "AI_API_KEY")
         
         if not self.model or not isinstance(self.model, str):
-            raise ConfigError(f"AI_MODEL 必须是有效的非空字符串，当前值: {self.model}")
+            raise ConfigurationError(f"AI_MODEL 必须是有效的非空字符串，当前值: {self.model}")
         
         # 验证 URL 安全性
         validate_url(self.base_url, "AI_BASE_URL")
         
         if not isinstance(self.timeout, int) or not (MIN_TIMEOUT <= self.timeout <= MAX_TIMEOUT):
-            raise ConfigError(
+            raise ConfigurationError(
                 f"AI_TIMEOUT 必须是 {MIN_TIMEOUT}-{MAX_TIMEOUT} 范围内的整数，当前值: {self.timeout}"
             )
         
         if not isinstance(self.max_retries, int) or not (MIN_RETRIES <= self.max_retries <= MAX_RETRIES):
-            raise ConfigError(
+            raise ConfigurationError(
                 f"AI_MAX_RETRIES 必须是 {MIN_RETRIES}-{MAX_RETRIES} 范围内的整数，当前值: {self.max_retries}"
             )

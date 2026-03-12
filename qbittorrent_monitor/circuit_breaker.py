@@ -13,13 +13,13 @@ from enum import Enum
 from dataclasses import dataclass, field
 from functools import wraps
 
-from .exceptions import QBMonitorError
+from .exceptions_unified import QBittorrentMonitorError
 
 
 logger = logging.getLogger(__name__)
 
 
-class CircuitBreakerError(QBMonitorError):
+class CircuitBreakerError(QBittorrentMonitorError):
     """熔断器错误"""
     pass
 

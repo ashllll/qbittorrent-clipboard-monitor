@@ -1,0 +1,113 @@
+{
+  "movie_responses": [
+    {
+      "input": "The.Matrix.1999.1080p.BluRay.x264",
+      "category": "movies",
+      "confidence": 0.95
+    },
+    {
+      "input": "Inception.2010.4K.UHD.BluRay",
+      "category": "movies",
+      "confidence": 0.92
+    },
+    {
+      "input": "Interstellar.2014.IMAX.1080p",
+      "category": "movies",
+      "confidence": 0.90
+    }
+  ],
+  "tv_responses": [
+    {
+      "input": "Breaking.Bad.S01E01.1080p.WEB-DL",
+      "category": "tv",
+      "confidence": 0.94
+    },
+    {
+      "input": "Game.of.Thrones.S08E03.4K.HDR",
+      "category": "tv",
+      "confidence": 0.91
+    },
+    {
+      "input": "Stranger.Things.S04.Complete.1080p",
+      "category": "tv",
+      "confidence": 0.88
+    }
+  ],
+  "anime_responses": [
+    {
+      "input": "[GM-Team] Attack on Titan Season 4",
+      "category": "anime",
+      "confidence": 0.96
+    },
+    {
+      "input": "Demon Slayer Mugen Train BD 1080p",
+      "category": "anime",
+      "confidence": 0.93
+    },
+    {
+      "input": "One Piece Episode 1000",
+      "category": "anime",
+      "confidence": 0.89
+    }
+  ],
+  "music_responses": [
+    {
+      "input": "Pink Floyd - The Wall FLAC",
+      "category": "music",
+      "confidence": 0.95
+    },
+    {
+      "input": "The Beatles Abbey Road Remastered MP3",
+      "category": "music",
+      "confidence": 0.92
+    }
+  ],
+  "software_responses": [
+    {
+      "input": "Adobe Photoshop 2024 v25.0 Portable",
+      "category": "software",
+      "confidence": 0.90
+    },
+    {
+      "input": "Microsoft Office 2021 Professional",
+      "category": "software",
+      "confidence": 0.88
+    }
+  ],
+  "games_responses": [
+    {
+      "input": "Cyberpunk 2077 v2.0 CODEX",
+      "category": "games",
+      "confidence": 0.91
+    },
+    {
+      "input": "The Witcher 3 GOTY Edition FitGirl Repack",
+      "category": "games",
+      "confidence": 0.89
+    }
+  ],
+  "books_responses": [
+    {
+      "input": "Clean Code - Robert C. Martin PDF",
+      "category": "books",
+      "confidence": 0.87
+    },
+    {
+      "input": "Design Patterns EPUB",
+      "category": "books",
+      "confidence": 0.85
+    }
+  ],
+  "other_responses": [
+    {
+      "input": "random file with no clear category",
+      "category": "other",
+      "confidence": 0.40
+    },
+    {
+      "input": "unknown content xyz123",
+      "category": "other",
+      "confidence": 0.30
+    }
+  ]
+}

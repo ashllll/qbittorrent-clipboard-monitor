@@ -14,7 +14,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
-from ..exceptions import ConfigError
+from ..exceptions_unified import ConfigurationError, ConfigValidationError, ConfigLoadError
 from .constants import VALID_LOG_LEVELS, MIN_CHECK_INTERVAL, MAX_CHECK_INTERVAL
 from .qb import QBConfig
 from .ai import AIConfig
@@ -74,14 +74,14 @@ class Config:
             警告信息列表（仅当 strict=False 时）
         
         Raises:
-            ConfigError: 当 strict=True 且配置无效时抛出
+            ConfigurationError: 当 strict=True 且配置无效时抛出
         """
         warnings: List[str] = []
         
         # 验证 qBittorrent 配置
         try:
             self.qbittorrent.validate()
-        except ConfigError as e:
+        except ConfigurationError as e:
             if strict:
                 raise
             warnings.append(f"qBittorrent 配置警告: {e}")
@@ -89,7 +89,7 @@ class Config:
         # 验证 AI 配置
         try:
             self.ai.validate()
-        except ConfigError as e:
+        except ConfigurationError as e:
             if strict:
                 raise
             warnings.append(f"AI 配置警告: {e}")
@@ -98,7 +98,7 @@ class Config:
         for name, cat in self.categories.items():
             try:
                 cat.validate(name)
-            except ConfigError as e:
+            except ConfigurationError as e:
                 if strict:
                     raise
                 warnings.append(str(e))
@@ -107,7 +107,7 @@ class Config:
         if self.log_level.upper() not in VALID_LOG_LEVELS:
             msg = f"LOG_LEVEL 必须是以下值之一: {', '.join(VALID_LOG_LEVELS)}，当前值: {self.log_level}"
             if strict:
-                raise ConfigError(msg)
+                raise ConfigurationError(msg)
             warnings.append(msg)
         else:
             self.log_level = self.log_level.upper()
@@ -116,7 +116,7 @@ class Config:
         if not isinstance(self.check_interval, (int, float)):
             msg = f"CHECK_INTERVAL 必须是数字，当前值: {self.check_interval}"
             if strict:
-                raise ConfigError(msg)
+                raise ConfigurationError(msg)
             warnings.append(msg)
         elif not (MIN_CHECK_INTERVAL <= self.check_interval <= MAX_CHECK_INTERVAL):
             msg = (
@@ -124,13 +124,13 @@ class Config:
                 f"当前值: {self.check_interval}"
             )
             if strict:
-                raise ConfigError(msg)
+                raise ConfigurationError(msg)
             warnings.append(msg)
         
         # 验证数据库配置
         try:
             self.database.validate()
-        except ConfigError as e:
+        except ConfigurationError as e:
             if strict:
                 raise
             warnings.append(f"数据库配置警告: {e}")
@@ -138,7 +138,7 @@ class Config:
         # 验证指标配置
         try:
             self.metrics.validate()
-        except ConfigError as e:
+        except ConfigurationError as e:
             if strict:
                 raise
             warnings.append(f"指标配置警告: {e}")
@@ -146,7 +146,7 @@ class Config:
         # 验证插件配置
         try:
             self.plugins.validate()
-        except ConfigError as e:
+        except ConfigurationError as e:
             if strict:
                 raise
             warnings.append(f"插件配置警告: {e}")
@@ -191,7 +191,7 @@ class Config:
             Config 实例
             
         Raises:
-            ConfigError: 当配置格式无效时抛出
+            ConfigurationError: 当配置格式无效时抛出
         """
         try:
             return cls(
@@ -208,9 +208,9 @@ class Config:
                 plugins=PluginConfig(**data.get("plugins", {})),
             )
         except TypeError as e:
-            raise ConfigError(f"配置格式错误: {e}")
+            raise ConfigValidationError(f"配置格式错误: {e}")
         except Exception as e:
-            raise ConfigError(f"加载配置时发生错误: {e}")
+            raise ConfigLoadError(f"加载配置时发生错误: {e}")
 
     def save(self, path: Optional[Path] = None) -> None:
         """保存配置到 JSON 文件
@@ -275,6 +275,6 @@ class Config:
                 data = json.load(f)
             return cls.from_dict(data)
         except json.JSONDecodeError as e:
-            raise ConfigError(f"配置文件 JSON 格式错误 ({path}): {e}")
+            raise ConfigValidationError(f"配置文件 JSON 格式错误 ({path}): {e}", file_path=str(path))
         except Exception as e:
-            raise ConfigError(f"加载配置文件失败 ({path}): {e}")
+            raise ConfigLoadError(f"加载配置文件失败 ({path}): {e}", file_path=str(path))

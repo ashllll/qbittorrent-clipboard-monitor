@@ -9,10 +9,10 @@ from abc import ABC, abstractmethod
 from typing import TypeVar, Generic, List, Optional, Dict, Any
 from dataclasses import dataclass
 
-from ..exceptions import QBMonitorError
+from ..exceptions_unified import QBittorrentMonitorError
 
 
-class RepositoryError(QBMonitorError):
+class RepositoryError(QBittorrentMonitorError):
     """仓库错误"""
     pass
 

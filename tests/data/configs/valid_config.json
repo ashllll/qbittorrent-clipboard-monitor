@@ -1,0 +1,101 @@
+{
+  "qbittorrent": {
+    "host": "localhost",
+    "port": 8080,
+    "username": "admin",
+    "password": "adminadmin",
+    "use_https": false
+  },
+  "ai": {
+    "enabled": false,
+    "api_key": "",
+    "model": "deepseek-chat",
+    "base_url": "https://api.deepseek.com/v1",
+    "timeout": 30,
+    "max_retries": 3
+  },
+  "categories": {
+    "movies": {
+      "save_path": "/downloads/movies",
+      "keywords": [
+        "1080p",
+        "4K",
+        "BluRay",
+        "Blu-ray",
+        "WEB-DL",
+        "WEBRip",
+        "HDTV",
+        "Movie",
+        "电影"
+      ]
+    },
+    "tv": {
+      "save_path": "/downloads/tv",
+      "keywords": [
+        "S01",
+        "S02",
+        "S03",
+        "E01",
+        "E02",
+        "Season",
+        "Episode",
+        "TV Series",
+        "电视剧"
+      ]
+    },
+    "anime": {
+      "save_path": "/downloads/anime",
+      "keywords": [
+        "Anime",
+        "动画",
+        "BD",
+        "OVA",
+        "剧场版"
+      ]
+    },
+    "music": {
+      "save_path": "/downloads/music",
+      "keywords": [
+        "FLAC",
+        "MP3",
+        "Music",
+        "Album",
+        "音乐"
+      ]
+    },
+    "software": {
+      "save_path": "/downloads/software",
+      "keywords": [
+        "Software",
+        "Portable",
+        "软件"
+      ]
+    },
+    "other": {
+      "save_path": "/downloads/other",
+      "keywords": []
+    }
+  },
+  "check_interval": 1.0,
+  "log_level": "INFO",
+  "database": {
+    "enabled": false,
+    "db_path": "./qb_monitor.db",
+    "auto_cleanup_days": 30,
+    "export_format": "json"
+  },
+  "metrics": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 9090
+  },
+  "plugins": {
+    "enabled": false,
+    "plugins_dir": null,
+    "auto_enable": false,
+    "auto_discover": true,
+    "enabled_plugins": [],
+    "disabled_plugins": [],
+    "plugin_configs": {}
+  }
+}

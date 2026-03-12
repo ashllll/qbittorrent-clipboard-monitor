@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from ..exceptions import ConfigError
+from ..exceptions_unified import ConfigurationError
 
 
 @dataclass
@@ -38,16 +38,16 @@ class DatabaseConfig:
         """验证数据库配置
         
         Raises:
-            ConfigError: 当配置项无效时抛出
+            ConfigurationError: 当配置项无效时抛出
         """
         if not isinstance(self.enabled, bool):
-            raise ConfigError(f"DATABASE_ENABLED 必须是布尔值，当前值: {self.enabled}")
+            raise ConfigurationError(f"DATABASE_ENABLED 必须是布尔值，当前值: {self.enabled}")
         
         if not self.db_path or not isinstance(self.db_path, str):
-            raise ConfigError(f"DATABASE_PATH 必须是有效的字符串，当前值: {self.db_path}")
+            raise ConfigurationError(f"DATABASE_PATH 必须是有效的字符串，当前值: {self.db_path}")
         
         if not isinstance(self.auto_cleanup_days, int) or self.auto_cleanup_days < 0:
-            raise ConfigError(f"DATABASE_AUTO_CLEANUP_DAYS 必须是非负整数，当前值: {self.auto_cleanup_days}")
+            raise ConfigurationError(f"DATABASE_AUTO_CLEANUP_DAYS 必须是非负整数，当前值: {self.auto_cleanup_days}")
         
         if self.export_format not in ("json", "csv"):
-            raise ConfigError(f"DATABASE_EXPORT_FORMAT 必须是 'json' 或 'csv'，当前值: {self.export_format}")
+            raise ConfigurationError(f"DATABASE_EXPORT_FORMAT 必须是 'json' 或 'csv'，当前值: {self.export_format}")

@@ -27,21 +27,21 @@ class MetricsConfig:
         """验证指标配置
         
         Raises:
-            ConfigError: 当配置无效时抛出
+            ConfigurationError: 当配置无效时抛出
         """
         from .constants import MIN_PORT, MAX_PORT
-        from ..exceptions import ConfigError
+        from ..exceptions_unified import ConfigurationError
         
         if not isinstance(self.enabled, bool):
-            raise ConfigError(f"METRICS_ENABLED 必须是布尔值，当前值: {self.enabled}")
+            raise ConfigurationError(f"METRICS_ENABLED 必须是布尔值，当前值: {self.enabled}")
         
         if not isinstance(self.port, int) or not (MIN_PORT <= self.port <= MAX_PORT):
-            raise ConfigError(
+            raise ConfigurationError(
                 f"METRICS_PORT 必须是 {MIN_PORT}-{MAX_PORT} 范围内的整数，当前值: {self.port}"
             )
         
         if not self.host or not isinstance(self.host, str):
-            raise ConfigError(f"METRICS_HOST 必须是有效的非空字符串")
+            raise ConfigurationError(f"METRICS_HOST 必须是有效的非空字符串")
         
         if not self.path or not self.path.startswith("/"):
-            raise ConfigError(f"METRICS_PATH 必须以 '/' 开头")
+            raise ConfigurationError(f"METRICS_PATH 必须以 '/' 开头")

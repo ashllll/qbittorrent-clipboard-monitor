@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from ..exceptions import ConfigError
+from ..exceptions_unified import ConfigurationError
 from ..security import validate_save_path
 from .validators import validate_keywords_list
 
@@ -37,7 +37,7 @@ class CategoryConfig:
             name: 分类名称
             
         Raises:
-            ConfigError: 当配置项无效时抛出
+            ConfigurationError: 当配置项无效时抛出
         """
         # 使用安全模块验证保存路径
         validate_save_path(self.save_path, f"分类 '{name}' 的 save_path")

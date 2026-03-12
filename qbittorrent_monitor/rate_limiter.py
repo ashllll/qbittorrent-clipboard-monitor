@@ -13,10 +13,10 @@ from enum import Enum
 from collections import defaultdict, deque
 from functools import wraps
 
-from .exceptions import QBMonitorError
+from .exceptions_unified import QBittorrentMonitorError
 
 
-class RateLimitError(QBMonitorError):
+class RateLimitError(QBittorrentMonitorError):
     """速率限制错误"""
     pass
 

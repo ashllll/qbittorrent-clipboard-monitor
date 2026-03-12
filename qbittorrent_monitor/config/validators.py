@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ..exceptions import ConfigError
+from ..exceptions_unified import ConfigurationError
 from ..security import validate_hostname, validate_url
 
 logger = logging.getLogger(__name__)
@@ -25,14 +25,14 @@ def parse_bool(value: str) -> bool:
         布尔值
         
     Raises:
-        ConfigError: 当值无法解析为布尔值时抛出
+        ConfigurationError: 当值无法解析为布尔值时抛出
     """
     if value.lower() in ("true", "1", "yes", "on", "enabled"):
         return True
     elif value.lower() in ("false", "0", "no", "off", "disabled", ""):
         return False
     else:
-        raise ConfigError(f"无法解析为布尔值: {value}")
+        raise ConfigurationError(f"无法解析为布尔值: {value}")
 
 
 def parse_int(
@@ -53,18 +53,18 @@ def parse_int(
         整数值
         
     Raises:
-        ConfigError: 当值无效时抛出
+        ConfigurationError: 当值无效时抛出
     """
     try:
         result = int(value)
     except ValueError:
-        raise ConfigError(f"{name} 必须是整数，当前值: {value}")
+        raise ConfigurationError(f"{name} 必须是整数，当前值: {value}")
     
     if min_val is not None and result < min_val:
-        raise ConfigError(f"{name} 不能小于 {min_val}，当前值: {result}")
+        raise ConfigurationError(f"{name} 不能小于 {min_val}，当前值: {result}")
     
     if max_val is not None and result > max_val:
-        raise ConfigError(f"{name} 不能大于 {max_val}，当前值: {result}")
+        raise ConfigurationError(f"{name} 不能大于 {max_val}，当前值: {result}")
     
     return result
 
@@ -87,12 +87,12 @@ def parse_float(
         浮点数值
         
     Raises:
-        ConfigError: 当值无效时抛出
+        ConfigurationError: 当值无效时抛出
     """
     try:
         result = float(value)
     except ValueError:
-        raise ConfigError(f"{name} 必须是数字，当前值: {value}")
+        raise ConfigurationError(f"{name} 必须是数字，当前值: {value}")
     
     if min_val is not None and result < min_val:
         raise ConfigError(f"{name} 不能小于 {min_val}，当前值: {result}")
@@ -114,11 +114,11 @@ def validate_non_empty_string(value: str, name: str) -> str:
         去除首尾空格的字符串
         
     Raises:
-        ConfigError: 当值为空时抛出
+        ConfigurationError: 当值为空时抛出
     """
     stripped = value.strip()
     if not stripped:
-        raise ConfigError(f"{name} 不能是空字符串")
+        raise ConfigurationError(f"{name} 不能是空字符串")
     return stripped
 
 
@@ -130,17 +130,17 @@ def validate_api_key(api_key: str, name: str = "API_KEY") -> None:
         name: 配置项名称
         
     Raises:
-        ConfigError: 当密钥格式无效时抛出
+        ConfigurationError: 当密钥格式无效时抛出
     """
     if not api_key or not isinstance(api_key, str):
-        raise ConfigError(f"{name} 必须设置")
+        raise ConfigurationError(f"{name} 必须设置")
     
     if len(api_key) < 10:
-        raise ConfigError(f"{name} 格式无效，密钥长度过短")
+        raise ConfigurationError(f"{name} 格式无效，密钥长度过短")
     
     # 检查是否包含可疑字符
     if '\n' in api_key or '\r' in api_key or '\x00' in api_key:
-        raise ConfigError(f"{name} 包含非法字符")
+        raise ConfigurationError(f"{name} 包含非法字符")
 
 
 def validate_keyword(keyword: str, category_name: str, index: int) -> None:
@@ -152,20 +152,20 @@ def validate_keyword(keyword: str, category_name: str, index: int) -> None:
         index: 关键词索引
         
     Raises:
-        ConfigError: 当关键词无效时抛出
+        ConfigurationError: 当关键词无效时抛出
     """
     from .constants import MAX_KEYWORD_LENGTH
     
     if not isinstance(keyword, str):
-        raise ConfigError(f"分类 '{category_name}' 的关键词 #{index+1} 必须是字符串")
+        raise ConfigurationError(f"分类 '{category_name}' 的关键词 #{index+1} 必须是字符串")
     
     if len(keyword) > MAX_KEYWORD_LENGTH:
-        raise ConfigError(
+        raise ConfigurationError(
             f"分类 '{category_name}' 的关键词 #{index+1} 过长（最大{MAX_KEYWORD_LENGTH}字符）"
         )
     
     if '\x00' in keyword or '\n' in keyword or '\r' in keyword:
-        raise ConfigError(f"分类 '{category_name}' 的关键词 #{index+1} 包含非法字符")
+        raise ConfigurationError(f"分类 '{category_name}' 的关键词 #{index+1} 包含非法字符")
 
 
 def validate_keywords_list(keywords: list, category_name: str) -> None:
@@ -176,15 +176,15 @@ def validate_keywords_list(keywords: list, category_name: str) -> None:
         category_name: 分类名称
         
     Raises:
-        ConfigError: 当列表无效时抛出
+        ConfigurationError: 当列表无效时抛出
     """
     from .constants import MAX_KEYWORDS
     
     if not isinstance(keywords, list):
-        raise ConfigError(f"分类 '{category_name}' 的 keywords 必须是字符串列表")
+        raise ConfigurationError(f"分类 '{category_name}' 的 keywords 必须是字符串列表")
     
     if len(keywords) > MAX_KEYWORDS:
-        raise ConfigError(f"分类 '{category_name}' 的关键词数量超过限制 ({MAX_KEYWORDS})")
+        raise ConfigurationError(f"分类 '{category_name}' 的关键词数量超过限制 ({MAX_KEYWORDS})")
     
     for i, keyword in enumerate(keywords):
         validate_keyword(keyword, category_name, i)

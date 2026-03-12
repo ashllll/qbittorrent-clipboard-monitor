@@ -1,10 +1,14 @@
 """统一的异常体系和错误代码
 
 提供结构化的错误处理和统一的错误日志格式。
+
+注意：此模块保留以提供向后兼容。
+新代码应使用 qbittorrent_monitor.exceptions_unified 模块。
 """
 
 from __future__ import annotations
 
+import warnings
 from enum import Enum
 from typing import Optional, Dict, Any, TYPE_CHECKING
 
@@ -12,10 +16,43 @@ if TYPE_CHECKING:
     import logging
 
 
+# 发出模块级别的弃用警告
+warnings.warn(
+    "qbittorrent_monitor.common.exceptions 已弃用。"
+    "请使用 qbittorrent_monitor.exceptions_unified 模块，"
+    "例如: from qbittorrent_monitor.exceptions_unified import ConfigurationError",
+    DeprecationWarning,
+    stacklevel=2
+)
+
+
+# 从新的统一异常模块重新导出
+from ..exceptions_unified import (
+    QBittorrentMonitorError as _QBittorrentMonitorError,
+    QBittorrentMonitorError as QBMonitorError,
+    ConfigurationError as _ConfigurationError,
+    ConfigurationError as ConfigError,
+    QBittorrentError as _QBittorrentError,
+    QBittorrentError as QBClientError,
+    QbtAuthError as QBAuthError,
+    QbtConnectionError as QBConnectionError,
+    AIError as _AIError,
+    AIError,
+    ClassificationError as _ClassificationError,
+    ClassificationError,
+    ValidationError as _ValidationError,
+    ValidationError,
+    SecurityError as _SecurityError,
+    SecurityError,
+)
+
+
 class ErrorCode(Enum):
-    """错误代码枚举
+    """错误代码枚举（保留以提供向后兼容）
     
     错误代码格式: 模块(2位) + 类别(2位) + 序号(2位)
+    
+    注意：新代码应使用 qbittorrent_monitor.exceptions_unified 中的错误码体系。
     
     模块代码:
         01 - 通用 (Common)
@@ -92,224 +129,6 @@ class ErrorCode(Enum):
     DB_MIGRATION_FAILED = "705002"
 
 
-class QBMonitorError(Exception):
-    """基础异常类
-    
-    所有自定义异常的基类，提供统一的错误代码和上下文信息。
-    
-    Attributes:
-        message: 错误消息
-        error_code: 错误代码
-        context: 错误上下文信息
-        cause: 原始异常（如果有）
-    
-    Example:
-        >>> raise QBMonitorError(
-        ...     "配置加载失败",
-        ...     error_code=ErrorCode.CONFIG_FILE_NOT_FOUND,
-        ...     context={"path": "/path/to/config.json"}
-        ... )
-    """
-    
-    def __init__(
-        self,
-        message: str,
-        error_code: Optional[ErrorCode] = None,
-        context: Optional[Dict[str, Any]] = None,
-        cause: Optional[Exception] = None,
-    ):
-        super().__init__(message)
-        self.message = message
-        self.error_code = error_code or ErrorCode.UNKNOWN_ERROR
-        self.context = context or {}
-        self.cause = cause
-    
-    def __str__(self) -> str:
-        parts = [f"[{self.error_code.value}] {self.message}"]
-        if self.context:
-            context_str = ", ".join(f"{k}={v}" for k, v in self.context.items())
-            parts.append(f"({context_str})")
-        if self.cause:
-            parts.append(f"[原因: {type(self.cause).__name__}: {self.cause}]")
-        return " ".join(parts)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """转换为字典格式，便于序列化"""
-        return {
-            "error_code": self.error_code.value,
-            "message": self.message,
-            "context": self.context,
-            "cause": str(self.cause) if self.cause else None,
-        }
-    
-    def log(self, logger: logging.Logger, level: int = None) -> None:
-        """记录错误日志
-        
-        Args:
-            logger: 日志记录器
-            level: 日志级别，默认为 ERROR
-        """
-        import logging
-        level = level or logging.ERROR
-        logger.log(level, str(self))
-
-
-class ConfigError(QBMonitorError):
-    """配置错误
-    
-    配置加载、验证或解析失败时抛出。
-    """
-    
-    def __init__(
-        self,
-        message: str,
-        error_code: Optional[ErrorCode] = None,
-        context: Optional[Dict[str, Any]] = None,
-        cause: Optional[Exception] = None,
-    ):
-        if error_code is None:
-            error_code = ErrorCode.CONFIG_INVALID
-        super().__init__(message, error_code, context, cause)
-
-
-class QBClientError(QBMonitorError):
-    """qBittorrent 客户端错误
-    
-    与 qBittorrent 服务器通信失败时抛出。
-    """
-    
-    def __init__(
-        self,
-        message: str,
-        error_code: Optional[ErrorCode] = None,
-        context: Optional[Dict[str, Any]] = None,
-        cause: Optional[Exception] = None,
-    ):
-        if error_code is None:
-            error_code = ErrorCode.QB_API_ERROR
-        super().__init__(message, error_code, context, cause)
-
-
-class QBAuthError(QBClientError):
-    """认证错误
-    
-    登录失败或会话过期时抛出。
-    """
-    
-    def __init__(
-        self,
-        message: str = "认证失败",
-        context: Optional[Dict[str, Any]] = None,
-        cause: Optional[Exception] = None,
-    ):
-        super().__init__(
-            message,
-            ErrorCode.QB_AUTH_FAILED,
-            context,
-            cause,
-        )
-
-
-class QBConnectionError(QBClientError):
-    """连接错误
-    
-    无法连接到 qBittorrent 服务器时抛出。
-    """
-    
-    def __init__(
-        self,
-        message: str = "无法连接到 qBittorrent 服务器",
-        context: Optional[Dict[str, Any]] = None,
-        cause: Optional[Exception] = None,
-    ):
-        super().__init__(
-            message,
-            ErrorCode.QB_CONNECTION_FAILED,
-            context,
-            cause,
-        )
-
-
-class AIError(QBMonitorError):
-    """AI 分类错误
-    
-    AI 请求失败或返回无效响应时抛出。
-    """
-    
-    def __init__(
-        self,
-        message: str,
-        error_code: Optional[ErrorCode] = None,
-        context: Optional[Dict[str, Any]] = None,
-        cause: Optional[Exception] = None,
-    ):
-        if error_code is None:
-            error_code = ErrorCode.AI_REQUEST_FAILED
-        super().__init__(message, error_code, context, cause)
-
-
-class ClassificationError(QBMonitorError):
-    """分类错误
-    
-    内容分类失败时抛出。
-    """
-    
-    def __init__(
-        self,
-        message: str = "分类失败",
-        context: Optional[Dict[str, Any]] = None,
-        cause: Optional[Exception] = None,
-    ):
-        super().__init__(
-            message,
-            ErrorCode.CLASSIFICATION_FAILED,
-            context,
-            cause,
-        )
-
-
-class ValidationError(QBMonitorError):
-    """验证错误
-    
-    输入验证失败时抛出。
-    """
-    
-    def __init__(
-        self,
-        message: str,
-        field: Optional[str] = None,
-        value: Any = None,
-        context: Optional[Dict[str, Any]] = None,
-    ):
-        ctx = context or {}
-        if field:
-            ctx["field"] = field
-        if value is not None:
-            ctx["value"] = value
-        super().__init__(
-            message,
-            ErrorCode.INVALID_ARGUMENT,
-            ctx,
-        )
-
-
-class SecurityError(QBMonitorError):
-    """安全错误
-    
-    安全检查失败时抛出。
-    """
-    
-    def __init__(
-        self,
-        message: str,
-        error_code: Optional[ErrorCode] = None,
-        context: Optional[Dict[str, Any]] = None,
-    ):
-        if error_code is None:
-            error_code = ErrorCode.SECURITY_VALIDATION_FAILED
-        super().__init__(message, error_code, context)
-
-
 def get_error_code(exception: Exception) -> ErrorCode:
     """获取异常的错误代码
     
@@ -319,8 +138,14 @@ def get_error_code(exception: Exception) -> ErrorCode:
     Returns:
         错误代码，如果不是 QBMonitorError 则返回 UNKNOWN_ERROR
     """
-    if isinstance(exception, QBMonitorError):
-        return exception.error_code
+    if isinstance(exception, _QBittorrentMonitorError):
+        # 将新的错误码映射到旧的 ErrorCode
+        if hasattr(exception, 'error_code') and exception.error_code:
+            code_str = str(exception.error_code)
+            # 尝试匹配旧的错误码
+            for code in ErrorCode:
+                if code.value == code_str:
+                    return code
     return ErrorCode.UNKNOWN_ERROR
 
 
@@ -341,8 +166,9 @@ def format_error_message(
     """
     parts = []
     
-    if isinstance(exception, QBMonitorError):
-        parts.append(f"[{exception.error_code.value}] {exception.message}")
+    if isinstance(exception, _QBittorrentMonitorError):
+        error_code = get_error_code(exception)
+        parts.append(f"[{error_code.value}] {exception.message}")
         if include_context and exception.context:
             context_str = ", ".join(f"{k}={v}" for k, v in exception.context.items())
             parts.append(f"({context_str})")
@@ -355,3 +181,22 @@ def format_error_message(
         parts.append(traceback.format_exc())
     
     return " ".join(parts)
+
+
+# 模块导出
+__all__ = [
+    # 错误码
+    "ErrorCode",
+    "get_error_code",
+    "format_error_message",
+    # 异常类（从新的模块重新导出）
+    "QBMonitorError",
+    "ConfigError",
+    "QBClientError",
+    "QBAuthError",
+    "QBConnectionError",
+    "AIError",
+    "ClassificationError",
+    "ValidationError",
+    "SecurityError",
+]

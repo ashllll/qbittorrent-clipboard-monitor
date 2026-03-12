@@ -1,0 +1,10 @@
+{
+  "qbittorrent": {
+    "host": "localhost",
+    "port": 99999,
+    "username": "",
+    "password": ""
+  },
+  "check_interval": -1.0,
+  "log_level": "INVALID_LEVEL"
+}

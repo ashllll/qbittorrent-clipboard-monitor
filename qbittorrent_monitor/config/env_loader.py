@@ -9,7 +9,7 @@ import os
 import logging
 from typing import Optional
 
-from ..exceptions import ConfigError
+from ..exceptions_unified import ConfigurationError
 from ..security import validate_hostname, validate_url
 from .constants import (
     MIN_PORT, MAX_PORT, MIN_TIMEOUT, MAX_TIMEOUT,
@@ -64,7 +64,7 @@ def load_from_env(config) -> None:
         config: 要修改的配置对象
         
     Raises:
-        ConfigError: 当环境变量值无效时抛出
+        ConfigurationError: 当环境变量值无效时抛出
     """
     # qBittorrent 配置
     if host := os.getenv("QBIT_HOST"):
@@ -116,7 +116,7 @@ def load_from_env(config) -> None:
     if log_level := os.getenv("LOG_LEVEL"):
         log_level_upper = log_level.upper()
         if log_level_upper not in VALID_LOG_LEVELS:
-            raise ConfigError(
+            raise ConfigurationError(
                 f"LOG_LEVEL 必须是以下值之一: {', '.join(VALID_LOG_LEVELS)}，当前值: {log_level}"
             )
         config.log_level = log_level_upper
@@ -170,7 +170,7 @@ def load_config(path: Optional[Path] = None, strict: bool = True):
         配置对象
         
     Raises:
-        ConfigError: 当 strict=True 且配置无效时抛出
+        ConfigurationError: 当 strict=True 且配置无效时抛出
     """
     from pathlib import Path
     from .base import Config

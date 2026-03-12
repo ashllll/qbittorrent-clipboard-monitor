@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import List, Callable, Optional
 
-from ..exceptions import ConfigError
+from ..exceptions_unified import ConfigurationError, ConfigNotFoundError, ConfigLoadError
 from .base import Config
 from .env_loader import load_from_env
 

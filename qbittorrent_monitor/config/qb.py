@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 import aiohttp
 
-from ..exceptions import ConfigError
+from ..exceptions_unified import ConfigurationError
 from ..security import validate_hostname
 from .constants import MIN_PORT, MAX_PORT, DEFAULT_QBIT_HOST, DEFAULT_QBIT_PORT, DEFAULT_QBIT_USERNAME
 
@@ -45,25 +45,25 @@ class QBConfig:
         """验证 qBittorrent 配置
         
         Raises:
-            ConfigError: 当配置项无效时抛出
+            ConfigurationError: 当配置项无效时抛出
         """
         # 验证主机名安全性
         validate_hostname(self.host, "QBIT_HOST")
         
         if not isinstance(self.port, int) or not (MIN_PORT <= self.port <= MAX_PORT):
-            raise ConfigError(
+            raise ConfigurationError(
                 f"QBIT_PORT 必须是 {MIN_PORT}-{MAX_PORT} 范围内的整数，当前值: {self.port}"
             )
         
         if not self.username or not isinstance(self.username, str):
-            raise ConfigError(f"QBIT_USERNAME 必须是有效的非空字符串，当前值: {self.username}")
+            raise ConfigurationError(f"QBIT_USERNAME 必须是有效的非空字符串，当前值: {self.username}")
         
         if not self.password or not isinstance(self.password, str):
-            raise ConfigError("QBIT_PASSWORD 必须设置，不能为空")
+            raise ConfigurationError("QBIT_PASSWORD 必须设置，不能为空")
         
         # 密码强度基本检查
         if len(self.password) < 1:
-            raise ConfigError("QBIT_PASSWORD 不能为空字符串")
+            raise ConfigurationError("QBIT_PASSWORD 不能为空字符串")
     
     async def verify_connection(self, timeout: int = 10) -> Dict[str, Any]:
         """验证 qBittorrent 连接配置的有效性
@@ -80,7 +80,7 @@ class QBConfig:
             - message: 状态消息
             
         Raises:
-            ConfigError: 配置验证失败时抛出
+            ConfigurationError: 配置验证失败时抛出
         """
         self.validate()
         
@@ -109,15 +109,15 @@ class QBConfig:
                                 "message": f"成功连接到 qBittorrent {version}"
                             }
                         else:
-                            raise ConfigError(f"登录失败: {result}")
+                            raise ConfigurationError(f"登录失败: {result}")
                     elif resp.status == 403:
                         raise ConfigError("IP 被禁止访问，请在 qBittorrent Web UI 设置中添加信任 IP")
                     else:
                         raise ConfigError(f"登录失败，HTTP 状态码: {resp.status}")
                         
         except aiohttp.ClientConnectorError as e:
-            raise ConfigError(f"无法连接到 qBittorrent 服务器 ({base_url}): {e}")
+            raise ConfigurationError(f"无法连接到 qBittorrent 服务器 ({base_url}): {e}")
         except aiohttp.ServerTimeoutError:
-            raise ConfigError(f"连接超时，请检查服务器地址和端口是否正确")
+            raise ConfigurationError(f"连接超时，请检查服务器地址和端口是否正确")
         except Exception as e:
-            raise ConfigError(f"验证连接时发生错误: {e}")
+            raise ConfigurationError(f"验证连接时发生错误: {e}")

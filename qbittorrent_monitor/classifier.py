@@ -16,7 +16,7 @@ from functools import lru_cache
 import anthropic
 
 from .config import Config
-from .exceptions import AIError
+from .exceptions_unified import AIError, AIFallbackError
 
 logger = logging.getLogger(__name__)
 

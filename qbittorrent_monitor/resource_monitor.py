@@ -15,13 +15,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from collections import deque
 
-from .exceptions import QBMonitorError
+from .exceptions_unified import QBittorrentMonitorError
 
 
 logger = logging.getLogger(__name__)
 
 
-class ResourceLimitError(QBMonitorError):
+class ResourceLimitError(QBittorrentMonitorError):
     """资源限制错误"""
     pass
 

@@ -16,12 +16,12 @@ from urllib.parse import urlparse, unquote
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .exceptions import ConfigError, QBMonitorError
+from .exceptions_unified import ConfigurationError, QBittorrentMonitorError
 
 
 # ============ 磁力链接安全增强 ============
 
-class MagnetValidationError(QBMonitorError):
+class MagnetValidationError(QBittorrentMonitorError):
     """磁力链接验证错误"""
     pass
 
@@ -223,7 +223,7 @@ def is_valid_magnet_strict(magnet: str) -> bool:
 
 # ============ 路径安全增强 ============
 
-class PathValidationError(QBMonitorError):
+class PathValidationError(QBittorrentMonitorError):
     """路径验证错误"""
     pass
 
@@ -449,7 +449,7 @@ def is_safe_path(path: str, base_path: Optional[str] = None) -> bool:
 
 # ============ URL安全增强 ============
 
-class URLValidationError(QBMonitorError):
+class URLValidationError(QBittorrentMonitorError):
     """URL验证错误"""
     pass
 
@@ -625,27 +625,27 @@ def validate_hostname_strict(hostname: str, name: str = "hostname") -> None:
         name: 配置项名称（用于错误信息）
         
     Raises:
-        ConfigError: 当主机名不安全时
+        ConfigurationError: 当主机名不安全时
     """
     if not isinstance(hostname, str):
-        raise ConfigError(f"{name} 必须是字符串类型")
+        raise ConfigurationError(f"{name} 必须是字符串类型")
     
     if not hostname:
-        raise ConfigError(f"{name} 不能为空")
+        raise ConfigurationError(f"{name} 不能为空")
     
     hostname = hostname.strip()
     
     # 长度检查
     if len(hostname) > MAX_HOSTNAME_LENGTH:
-        raise ConfigError(f"{name} 过长（最大{MAX_HOSTNAME_LENGTH}字符）")
+        raise ConfigurationError(f"{name} 过长（最大{MAX_HOSTNAME_LENGTH}字符）")
     
     # 检查控制字符
     if CONTROL_CHARS.search(hostname):
-        raise ConfigError(f"{name} 包含非法控制字符")
+        raise ConfigurationError(f"{name} 包含非法控制字符")
     
     # 检查危险字符（命令注入防护）
     if DANGEROUS_HOSTNAME_CHARS.search(hostname):
-        raise ConfigError(
+        raise ConfigurationError(
             f"{name} 包含危险字符，可能存在命令注入风险"
         )
     
@@ -654,7 +654,7 @@ def validate_hostname_strict(hostname: str, name: str = "hostname") -> None:
         # 允许IPv4地址
         if re.match(r'^(\d{1,3}\.){3}\d{1,3}$', hostname):
             return
-        raise ConfigError(f"{name} 包含非法字符")
+        raise ConfigurationError(f"{name} 包含非法字符")
 
 
 # ============ 内容大小限制 ============

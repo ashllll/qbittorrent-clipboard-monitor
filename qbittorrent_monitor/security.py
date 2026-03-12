@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 from urllib.parse import urlparse
 
-from .exceptions import ConfigError
+from .exceptions_unified import ConfigurationError
 
 
 # ============ 磁力链接验证 ============
@@ -177,26 +177,26 @@ def validate_save_path(path: str, name: str = "save_path") -> None:
         name: 配置项名称（用于错误信息）
         
     Raises:
-        ConfigError: 当路径存在安全风险时
+        ConfigurationError: 当路径存在安全风险时
     """
     if not path or not isinstance(path, str):
-        raise ConfigError(f"{name} 不能为空")
+        raise ConfigurationError(f"{name} 不能为空")
     
     path = path.strip()
     
     if not path:
-        raise ConfigError(f"{name} 不能为空字符串")
+        raise ConfigurationError(f"{name} 不能为空字符串")
     
     # 检查路径遍历
     for pattern in PATH_TRAVERSAL_PATTERNS:
         if pattern.search(path):
-            raise ConfigError(
+            raise ConfigurationError(
                 f"{name} 包含不安全的路径遍历序列: {path}"
             )
     
     # 检查非法字符
     if ILLEGAL_PATH_CHARS.search(path):
-        raise ConfigError(
+        raise ConfigurationError(
             f"{name} 包含非法字符: {path}"
         )
     
@@ -205,7 +205,7 @@ def validate_save_path(path: str, name: str = "save_path") -> None:
     for part in path_parts:
         base_name = part.split('.')[0].upper()
         if base_name in WINDOWS_RESERVED_NAMES:
-            raise ConfigError(
+            raise ConfigurationError(
                 f"{name} 包含Windows保留名称: {part}"
             )
     
@@ -265,40 +265,40 @@ def validate_url(url: str, name: str = "URL") -> None:
         name: 配置项名称（用于错误信息）
         
     Raises:
-        ConfigError: 当URL不合法时
+        ConfigurationError: 当URL不合法时
     """
     if not url or not isinstance(url, str):
-        raise ConfigError(f"{name} 不能为空")
+        raise ConfigurationError(f"{name} 不能为空")
     
     try:
         parsed = urlparse(url)
     except Exception as e:
-        raise ConfigError(f"{name} 解析失败: {e}")
+        raise ConfigurationError(f"{name} 解析失败: {e}")
     
     # 检查协议
     if not parsed.scheme:
-        raise ConfigError(f"{name} 缺少协议（如 http/https）")
+        raise ConfigurationError(f"{name} 缺少协议（如 http/https）")
     
     allowed_schemes = {'http', 'https'}
     if parsed.scheme.lower() not in allowed_schemes:
-        raise ConfigError(
+        raise ConfigurationError(
             f"{name} 使用不支持的协议 '{parsed.scheme}'，"
             f"仅支持: {', '.join(allowed_schemes)}"
         )
     
     # 检查主机
     if not parsed.netloc:
-        raise ConfigError(f"{name} 缺少主机地址")
+        raise ConfigurationError(f"{name} 缺少主机地址")
     
     # 检查是否包含用户信息（用户:密码@主机）
     if parsed.username or parsed.password:
-        raise ConfigError(
+        raise ConfigurationError(
             f"{name} 不应在URL中包含认证信息"
         )
     
     # 检查非法字符
     if '\x00' in url or '\n' in url or '\r' in url:
-        raise ConfigError(f"{name} 包含非法字符")
+        raise ConfigurationError(f"{name} 包含非法字符")
 
 
 # ============ 主机名验证 ============
@@ -312,26 +312,26 @@ def validate_hostname(hostname: str, name: str = "hostname") -> None:
         name: 配置项名称（用于错误信息）
         
     Raises:
-        ConfigError: 当主机名不合法时
+        ConfigurationError: 当主机名不合法时
     """
     if not hostname or not isinstance(hostname, str):
-        raise ConfigError(f"{name} 不能为空")
+        raise ConfigurationError(f"{name} 不能为空")
     
     hostname = hostname.strip()
     
     # 检查长度
     if len(hostname) > 253:
-        raise ConfigError(f"{name} 过长（最大253字符）")
+        raise ConfigurationError(f"{name} 过长（最大253字符）")
     
     # 检查非法字符
     if '\x00' in hostname or '\n' in hostname or '\r' in hostname:
-        raise ConfigError(f"{name} 包含非法字符")
+        raise ConfigurationError(f"{name} 包含非法字符")
     
     # 检查命令注入风险
     dangerous_chars = [';', '&', '|', '`', '$', '(', ')', '{', '}', '<', '>']
     for char in dangerous_chars:
         if char in hostname:
-            raise ConfigError(
+            raise ConfigurationError(
                 f"{name} 包含危险字符 '{char}'，可能存在命令注入风险"
             )
 
