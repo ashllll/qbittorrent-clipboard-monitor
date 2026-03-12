@@ -2,6 +2,7 @@
 
 ## Behavioral Rules (Always Enforced)
 
+- ALWAYS use Task tool (subagents) for any action — NEVER perform actions directly
 - Do what has been asked; nothing more, nothing less
 - NEVER create files unless they're absolutely necessary for achieving your goal
 - ALWAYS prefer editing an existing file to creating a new one
