@@ -1,0 +1,540 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ashllll/qbittorrent-clipboard-monitor/config.schema.json",
+  "title": "qBittorrent剪贴板监控器配置",
+  "description": "qBittorrent剪贴板监控器的完整配置文件Schema，支持IDE自动补全和验证",
+  "type": "object",
+  "required": ["qbittorrent", "deepseek", "categories"],
+  "additionalProperties": false,
+  "properties": {
+    "qbittorrent": {
+      "$ref": "#/definitions/QBittorrentConfig"
+    },
+    "deepseek": {
+      "$ref": "#/definitions/DeepSeekConfig"
+    },
+    "categories": {
+      "type": "object",
+      "description": "下载分类配置，键为分类名称，值为分类配置",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/definitions/CategoryConfig"
+      },
+      "examples": [
+        {
+          "movies": {
+            "savePath": "/downloads/movies/",
+            "keywords": ["电影", "Movie", "1080p"],
+            "description": "电影作品",
+            "priority": 8
+          }
+        }
+      ]
+    },
+    "web_crawler": {
+      "$ref": "#/definitions/WebCrawlerConfig"
+    },
+    "notifications": {
+      "$ref": "#/definitions/NotificationConfig"
+    },
+    "path_mapping": {
+      "type": "object",
+      "description": "全局路径映射（向后兼容），键为源路径前缀，值为目标路径前缀",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "examples": [
+        {
+          "/downloads": "/vol1/downloads"
+        }
+      ]
+    },
+    "use_nas_paths_directly": {
+      "type": "boolean",
+      "description": "是否直接使用NAS路径",
+      "default": false
+    },
+    "check_interval": {
+      "type": "number",
+      "description": "剪贴板检查间隔（秒）",
+      "minimum": 0.1,
+      "maximum": 60,
+      "default": 2.0,
+      "examples": [0.5, 1.0, 2.0]
+    },
+    "max_retries": {
+      "type": "integer",
+      "description": "最大重试次数",
+      "minimum": 0,
+      "maximum": 10,
+      "default": 3
+    },
+    "retry_delay": {
+      "type": "number",
+      "description": "重试延迟（秒）",
+      "minimum": 0,
+      "maximum": 60,
+      "default": 5.0
+    },
+    "hot_reload": {
+      "type": "boolean",
+      "description": "是否启用配置热加载",
+      "default": true
+    },
+    "log_level": {
+      "type": "string",
+      "description": "日志级别",
+      "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+      "default": "INFO"
+    },
+    "log_file": {
+      "type": ["string", "null"],
+      "description": "日志文件路径，null表示仅输出到控制台",
+      "default": "magnet_monitor.log",
+      "examples": ["magnet_monitor.log", "logs/app.log", null]
+    },
+    "add_torrents_paused": {
+      "type": "boolean",
+      "description": "是否以暂停状态添加种子",
+      "default": false
+    },
+    "ai_classify_torrents": {
+      "type": "boolean",
+      "description": "是否启用AI分类种子",
+      "default": true
+    },
+    "proxy": {
+      "type": ["string", "null"],
+      "description": "代理服务器地址",
+      "pattern": "^(http://|https://|socks4://|socks5://).*",
+      "examples": ["http://127.0.0.1:7890", "socks5://localhost:1080"]
+    }
+  },
+  "definitions": {
+    "QBittorrentConfig": {
+      "type": "object",
+      "description": "qBittorrent连接配置",
+      "required": ["host", "port", "username", "password"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "qBittorrent主机地址",
+          "minLength": 1,
+          "default": "192.168.1.40",
+          "examples": ["localhost", "192.168.1.40", "qbittorrent.example.com"]
+        },
+        "port": {
+          "type": "integer",
+          "description": "qBittorrent Web UI端口",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 8989,
+          "examples": [8080, 8989, 18080]
+        },
+        "username": {
+          "type": "string",
+          "description": "登录用户名",
+          "minLength": 1,
+          "default": "admin"
+        },
+        "password": {
+          "type": "string",
+          "description": "登录密码（明文，向后兼容）",
+          "minLength": 1,
+          "default": "password"
+        },
+        "hashed_password": {
+          "type": ["string", "null"],
+          "description": "哈希后的密码（推荐，更安全）",
+          "default": null
+        },
+        "use_https": {
+          "type": "boolean",
+          "description": "是否使用HTTPS连接",
+          "default": false
+        },
+        "verify_ssl": {
+          "type": "boolean",
+          "description": "是否验证SSL证书",
+          "default": true
+        },
+        "use_nas_paths_directly": {
+          "type": "boolean",
+          "description": "是否直接使用NAS路径",
+          "default": false
+        },
+        "path_mapping": {
+          "type": "array",
+          "description": "路径映射规则列表",
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/PathMappingRule"
+          }
+        }
+      }
+    },
+    "PathMappingRule": {
+      "type": "object",
+      "description": "路径映射规则",
+      "required": ["source_prefix", "target_prefix"],
+      "additionalProperties": false,
+      "properties": {
+        "source_prefix": {
+          "type": "string",
+          "description": "源路径前缀",
+          "minLength": 1,
+          "examples": ["/downloads", "/mnt/data"]
+        },
+        "target_prefix": {
+          "type": "string",
+          "description": "目标路径前缀",
+          "minLength": 1,
+          "examples": ["/vol1/downloads", "/nas/data"]
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "规则描述",
+          "default": null,
+          "examples": ["本地到NAS的路径映射"]
+        }
+      }
+    },
+    "DeepSeekConfig": {
+      "type": "object",
+      "description": "DeepSeek AI配置",
+      "properties": {
+        "api_key": {
+          "type": "string",
+          "description": "DeepSeek API密钥",
+          "default": ""
+        },
+        "model": {
+          "type": "string",
+          "description": "使用的AI模型",
+          "default": "deepseek-chat",
+          "examples": ["deepseek-chat", "deepseek-coder", "gpt-3.5-turbo"]
+        },
+        "base_url": {
+          "type": "string",
+          "description": "API基础URL",
+          "pattern": "^https?://",
+          "default": "https://api.deepseek.com",
+          "examples": ["https://api.deepseek.com", "https://api.openai.com/v1"]
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "API请求超时时间（秒）",
+          "minimum": 1,
+          "maximum": 300,
+          "default": 30
+        },
+        "max_retries": {
+          "type": "integer",
+          "description": "API请求最大重试次数",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 3
+        },
+        "retry_delay": {
+          "type": "number",
+          "description": "API请求重试延迟（秒）",
+          "minimum": 0,
+          "maximum": 60,
+          "default": 1.0
+        },
+        "few_shot_examples": {
+          "type": ["array", "null"],
+          "description": "Few-shot学习示例",
+          "default": null,
+          "items": {
+            "type": "object",
+            "properties": {
+              "torrent_name": {
+                "type": "string",
+                "description": "种子名称示例"
+              },
+              "category": {
+                "type": "string",
+                "description": "对应分类"
+              }
+            },
+            "required": ["torrent_name", "category"]
+          }
+        },
+        "prompt_template": {
+          "type": "string",
+          "description": "AI分类提示词模板",
+          "default": "你是下载分类助手。根据给定类别快速判断种子所属类别，并只返回 tv/movies/adult/anime/music/games/software/other 中的一个。\n\n种子: {torrent_name}\n分类列表:\n{category_descriptions}\n\n常见关键词:\n{category_keywords}\n\n{few_shot_examples}\n若无法确定，返回 other。"
+        }
+      }
+    },
+    "CategoryConfig": {
+      "type": "object",
+      "description": "分类配置",
+      "required": ["savePath"],
+      "additionalProperties": false,
+      "properties": {
+        "savePath": {
+          "type": "string",
+          "description": "下载保存路径",
+          "minLength": 1,
+          "examples": ["/downloads/movies/", "/vol1/tv/"]
+        },
+        "keywords": {
+          "type": "array",
+          "description": "分类关键词列表",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            ["电影", "Movie", "1080p", "4K"],
+            ["S01", "S02", "剧集", "Series"]
+          ]
+        },
+        "description": {
+          "type": "string",
+          "description": "分类描述",
+          "default": ""
+        },
+        "priority": {
+          "type": "integer",
+          "description": "分类优先级（0-100，数值越高优先级越高）",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 0
+        },
+        "foreign_keywords": {
+          "type": ["array", "null"],
+          "description": "外站关键词（用于特殊来源识别）",
+          "default": null,
+          "items": {
+            "type": "string"
+          }
+        },
+        "rules": {
+          "type": ["array", "null"],
+          "description": "分类规则列表（用于规则引擎分类）",
+          "default": null,
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["regex", "keyword"],
+                "description": "规则类型"
+              },
+              "pattern": {
+                "type": "string",
+                "description": "正则表达式模式（type=regex时使用）"
+              },
+              "keywords": {
+                "type": "array",
+                "description": "关键词列表（type=keyword时使用）",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "score": {
+                "type": "integer",
+                "description": "规则匹配分数"
+              }
+            },
+            "required": ["type", "score"]
+          }
+        }
+      }
+    },
+    "WebCrawlerConfig": {
+      "type": "object",
+      "description": "网页爬虫配置",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "是否启用网页爬虫",
+          "default": true
+        },
+        "page_timeout": {
+          "type": "integer",
+          "description": "页面加载超时时间（毫秒）",
+          "minimum": 1000,
+          "maximum": 300000,
+          "default": 60000
+        },
+        "wait_for": {
+          "type": "integer",
+          "description": "页面加载等待时间（秒）",
+          "minimum": 0,
+          "maximum": 60,
+          "default": 3
+        },
+        "delay_before_return": {
+          "type": "integer",
+          "description": "返回前等待时间（秒）",
+          "minimum": 0,
+          "maximum": 30,
+          "default": 2
+        },
+        "max_retries": {
+          "type": "integer",
+          "description": "页面加载最大重试次数",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 3
+        },
+        "base_delay": {
+          "type": "integer",
+          "description": "基础延迟时间（秒）",
+          "minimum": 0,
+          "maximum": 300,
+          "default": 5
+        },
+        "max_delay": {
+          "type": "integer",
+          "description": "最大延迟时间（秒）",
+          "minimum": 0,
+          "maximum": 600,
+          "default": 60
+        },
+        "max_concurrent_extractions": {
+          "type": "integer",
+          "description": "最大并发提取数",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 3
+        },
+        "inter_request_delay": {
+          "type": "number",
+          "description": "请求间延迟（秒）",
+          "minimum": 0,
+          "maximum": 60,
+          "default": 1.5
+        },
+        "ai_classify_torrents": {
+          "type": "boolean",
+          "description": "是否使用AI分类爬取的种子",
+          "default": true
+        },
+        "add_torrents_paused": {
+          "type": "boolean",
+          "description": "是否以暂停状态添加爬取的种子",
+          "default": false
+        },
+        "proxy": {
+          "type": ["string", "null"],
+          "description": "爬虫代理地址",
+          "pattern": "^(http://|https://|socks4://|socks5://).*",
+          "default": null
+        }
+      }
+    },
+    "NotificationConfig": {
+      "type": "object",
+      "description": "通知配置",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "是否启用通知",
+          "default": false
+        },
+        "console": {
+          "$ref": "#/definitions/ConsoleNotificationConfig"
+        },
+        "services": {
+          "type": "array",
+          "description": "启用的通知服务列表",
+          "default": [],
+          "items": {
+            "type": "string",
+            "enum": ["telegram", "discord", "email", "webhook", "apprise"]
+          }
+        },
+        "webhook_url": {
+          "type": ["string", "null"],
+          "description": "Webhook通知URL",
+          "format": "uri",
+          "default": null
+        },
+        "api_token": {
+          "type": ["string", "null"],
+          "description": "API令牌（用于Telegram等）",
+          "default": null
+        },
+        "chat_id": {
+          "type": ["string", "null"],
+          "description": "聊天ID（用于Telegram等）",
+          "default": null
+        },
+        "email_config": {
+          "type": ["object", "null"],
+          "description": "邮件通知配置",
+          "default": null,
+          "properties": {
+            "smtp_host": {
+              "type": "string",
+              "description": "SMTP服务器地址"
+            },
+            "smtp_port": {
+              "type": "integer",
+              "description": "SMTP端口",
+              "default": 587
+            },
+            "username": {
+              "type": "string",
+              "description": "邮箱用户名"
+            },
+            "password": {
+              "type": "string",
+              "description": "邮箱密码"
+            },
+            "use_tls": {
+              "type": "boolean",
+              "description": "是否使用TLS",
+              "default": true
+            },
+            "to_addresses": {
+              "type": "array",
+              "description": "收件人地址列表",
+              "items": {
+                "type": "string",
+                "format": "email"
+              }
+            }
+          },
+          "required": ["smtp_host", "username", "password"]
+        }
+      }
+    },
+    "ConsoleNotificationConfig": {
+      "type": "object",
+      "description": "控制台通知配置",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "是否启用控制台通知",
+          "default": true
+        },
+        "colored": {
+          "type": "boolean",
+          "description": "是否使用彩色输出",
+          "default": true
+        },
+        "show_details": {
+          "type": "boolean",
+          "description": "是否显示详细信息",
+          "default": true
+        },
+        "show_statistics": {
+          "type": "boolean",
+          "description": "是否显示统计信息",
+          "default": true
+        }
+      }
+    }
+  }
+}

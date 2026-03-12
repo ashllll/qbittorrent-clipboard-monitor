@@ -1,0 +1,121 @@
+{
+    "_comment": "Docker环境配置 - 环境变量优先",
+    "_warning": "所有敏感信息通过环境变量传递",
+    "qbittorrent": {
+        "host": "${QBT_HOST:-host.docker.internal}",
+        "port": "${QBT_PORT:-8080}",
+        "username": "${QBT_USERNAME:-admin}",
+        "password": "${QBT_PASSWORD:-password}",
+        "use_https": "${QBT_USE_HTTPS:-false}",
+        "verify_ssl": "${QBT_VERIFY_SSL:-true}",
+        "use_nas_paths_directly": "${QBT_USE_NAS_PATHS:-false}",
+        "path_mapping": []
+    },
+    "deepseek": {
+        "api_key": "${DEEPSEEK_API_KEY}",
+        "model": "${AI_MODEL:-deepseek-chat}",
+        "base_url": "${DEEPSEEK_BASE_URL:-https://api.deepseek.com}",
+        "timeout": 30,
+        "max_retries": 3,
+        "retry_delay": 1.0,
+        "few_shot_examples": [
+            {
+                "torrent_name": "Game.of.Thrones.S08E06.1080p.WEB.H264-MEMENTO",
+                "category": "tv"
+            },
+            {
+                "torrent_name": "Avengers.Endgame.2019.1080p.BluRay.x264-SPARKS",
+                "category": "movies"
+            }
+        ]
+    },
+    "categories": {
+        "movies": {
+            "savePath": "/downloads/movies/",
+            "keywords": ["电影", "Movie", "1080p", "4K"],
+            "description": "电影作品",
+            "priority": 8
+        },
+        "tv": {
+            "savePath": "/downloads/tv/",
+            "keywords": ["S01", "S02", "剧集", "电视剧"],
+            "description": "电视剧、连续剧",
+            "priority": 10
+        },
+        "anime": {
+            "savePath": "/downloads/anime/",
+            "keywords": ["动画", "动漫", "Anime"],
+            "description": "日本动画、动漫",
+            "priority": 12
+        },
+        "music": {
+            "savePath": "/downloads/music/",
+            "keywords": ["音乐", "Music", "FLAC"],
+            "description": "音乐专辑、单曲",
+            "priority": 6
+        },
+        "games": {
+            "savePath": "/downloads/games/",
+            "keywords": ["游戏", "Game", "ISO"],
+            "description": "电子游戏",
+            "priority": 7
+        },
+        "software": {
+            "savePath": "/downloads/software/",
+            "keywords": ["软件", "Software", "App"],
+            "description": "应用程序、软件",
+            "priority": 5
+        },
+        "adult": {
+            "savePath": "/downloads/adult/",
+            "keywords": ["成人", "18+", "xxx"],
+            "description": "成人内容",
+            "priority": 15
+        },
+        "other": {
+            "savePath": "/downloads/other/",
+            "keywords": [],
+            "description": "其他内容",
+            "priority": 1
+        }
+    },
+    "web_crawler": {
+        "enabled": "${CRAWLER_ENABLED:-true}",
+        "page_timeout": "${CRAWLER_PAGE_TIMEOUT:-60000}",
+        "wait_for": 3,
+        "delay_before_return": 2,
+        "max_retries": 3,
+        "base_delay": 5,
+        "max_delay": 60,
+        "max_concurrent_extractions": "${CRAWLER_MAX_CONCURRENT:-3}",
+        "inter_request_delay": "${CRAWLER_DELAY:-1.5}",
+        "ai_classify_torrents": true,
+        "add_torrents_paused": false,
+        "proxy": "${CRAWLER_PROXY:-null}"
+    },
+    "notifications": {
+        "enabled": "${NOTIFICATIONS_ENABLED:-false}",
+        "console": {
+            "enabled": true,
+            "colored": false,
+            "show_details": true,
+            "show_statistics": true
+        },
+        "services": "${NOTIFICATION_SERVICES:-[]}",
+        "webhook_url": "${NOTIFICATION_WEBHOOK_URL:-null}",
+        "api_token": "${NOTIFICATION_API_TOKEN:-null}",
+        "chat_id": "${NOTIFICATION_CHAT_ID:-null}",
+        "email_config": null
+    },
+    "check_interval": "${CHECK_INTERVAL:-2.0}",
+    "max_retries": 3,
+    "retry_delay": 5.0,
+    "hot_reload": "${HOT_RELOAD:-false}",
+    "log_level": "${LOG_LEVEL:-INFO}",
+    "log_file": "${LOG_FILE:-/app/logs/qbittorrent-monitor.log}",
+    "add_torrents_paused": false,
+    "ai_classify_torrents": true,
+    "proxy": "${PROXY:-null}",
+    "path_mapping": {},
+    "use_nas_paths_directly": false
+}

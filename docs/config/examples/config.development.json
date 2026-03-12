@@ -1,0 +1,121 @@
+{
+    "_comment": "开发环境配置 - 详细日志、热加载、调试功能开启",
+    "_warning": "请勿在生产环境使用此配置",
+    "qbittorrent": {
+        "host": "localhost",
+        "port": 8080,
+        "username": "admin",
+        "password": "adminadmin",
+        "use_https": false,
+        "verify_ssl": false,
+        "use_nas_paths_directly": false,
+        "path_mapping": []
+    },
+    "deepseek": {
+        "api_key": "${DEEPSEEK_API_KEY}",
+        "model": "deepseek-chat",
+        "base_url": "https://api.deepseek.com",
+        "timeout": 30,
+        "max_retries": 1,
+        "retry_delay": 1.0,
+        "few_shot_examples": [
+            {
+                "torrent_name": "Game.of.Thrones.S08E06.1080p.WEB.H264-MEMENTO",
+                "category": "tv"
+            },
+            {
+                "torrent_name": "Avengers.Endgame.2019.1080p.BluRay.x264-SPARKS",
+                "category": "movies"
+            }
+        ]
+    },
+    "categories": {
+        "movies": {
+            "savePath": "/downloads/movies/",
+            "keywords": ["电影", "Movie", "1080p", "4K"],
+            "description": "电影作品",
+            "priority": 8
+        },
+        "tv": {
+            "savePath": "/downloads/tv/",
+            "keywords": ["S01", "S02", "剧集", "电视剧"],
+            "description": "电视剧、连续剧",
+            "priority": 10
+        },
+        "anime": {
+            "savePath": "/downloads/anime/",
+            "keywords": ["动画", "动漫", "Anime"],
+            "description": "日本动画、动漫",
+            "priority": 12
+        },
+        "music": {
+            "savePath": "/downloads/music/",
+            "keywords": ["音乐", "Music", "FLAC"],
+            "description": "音乐专辑、单曲",
+            "priority": 6
+        },
+        "games": {
+            "savePath": "/downloads/games/",
+            "keywords": ["游戏", "Game", "ISO"],
+            "description": "电子游戏",
+            "priority": 7
+        },
+        "software": {
+            "savePath": "/downloads/software/",
+            "keywords": ["软件", "Software", "App"],
+            "description": "应用程序、软件",
+            "priority": 5
+        },
+        "adult": {
+            "savePath": "/downloads/adult/",
+            "keywords": ["成人", "18+", "xxx"],
+            "description": "成人内容",
+            "priority": 15
+        },
+        "other": {
+            "savePath": "/downloads/other/",
+            "keywords": [],
+            "description": "其他内容",
+            "priority": 1
+        }
+    },
+    "web_crawler": {
+        "enabled": true,
+        "page_timeout": 30000,
+        "wait_for": 2,
+        "delay_before_return": 1,
+        "max_retries": 1,
+        "base_delay": 2,
+        "max_delay": 10,
+        "max_concurrent_extractions": 1,
+        "inter_request_delay": 2.0,
+        "ai_classify_torrents": true,
+        "add_torrents_paused": false,
+        "proxy": null
+    },
+    "notifications": {
+        "enabled": false,
+        "console": {
+            "enabled": true,
+            "colored": true,
+            "show_details": true,
+            "show_statistics": true
+        },
+        "services": [],
+        "webhook_url": null,
+        "api_token": null,
+        "chat_id": null,
+        "email_config": null
+    },
+    "check_interval": 1.0,
+    "max_retries": 1,
+    "retry_delay": 2.0,
+    "hot_reload": true,
+    "log_level": "DEBUG",
+    "log_file": "logs/development.log",
+    "add_torrents_paused": false,
+    "ai_classify_torrents": true,
+    "proxy": null,
+    "path_mapping": {},
+    "use_nas_paths_directly": false
+}
